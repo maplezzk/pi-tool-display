@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   countWriteContentLines,
@@ -27,12 +30,68 @@ import {
   buildCollapsedDiffHintText,
   clampRenderedLineToWidth,
 } from "../src/line-width-safety.ts";
+import { buildPendingEditPreviewData } from "../src/pending-diff-preview.ts";
 
 const codePointWidthOps = {
   measure: (text: string): number => [...text].length,
   truncate: (text: string, maxWidth: number): string =>
     [...text].slice(0, Math.max(0, maxWidth)).join(""),
 };
+
+
+test("pending edit preview matches LF edit input against CRLF files", () => {
+  const baseDir = mkdtempSync(join(tmpdir(), "pi-tool-display-preview-"));
+
+  try {
+    const filePath = join(baseDir, "sample.txt");
+    writeFileSync(filePath, "alpha\r\nbeta\r\ngamma\r\n", "utf8");
+
+    const preview = buildPendingEditPreviewData(
+      {
+        path: "sample.txt",
+        edits: [
+          {
+            oldText: "alpha\nbeta",
+            newText: "alpha\nupdated",
+          },
+        ],
+      },
+      baseDir,
+    );
+
+    assert.equal(preview?.notice, undefined);
+    assert.equal(preview?.nextContent, "alpha\r\nupdated\r\ngamma\r\n");
+    assert.equal(preview?.previousContent, "alpha\r\nbeta\r\ngamma\r\n");
+  } finally {
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+});
+
+test("pending edit preview reports a concise notice for true edit mismatches", () => {
+  const baseDir = mkdtempSync(join(tmpdir(), "pi-tool-display-preview-miss-"));
+
+  try {
+    writeFileSync(join(baseDir, "sample.txt"), "alpha\nbeta\n", "utf8");
+
+    const preview = buildPendingEditPreviewData(
+      {
+        path: "sample.txt",
+        edits: [
+          {
+            oldText: "missing",
+            newText: "updated",
+          },
+        ],
+      },
+      baseDir,
+    );
+
+    assert.equal(preview?.nextContent, undefined);
+    assert.equal(preview?.notice, "Preview not shown: edit #1 did not match the current file contents.");
+  } finally {
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+});
 
 test("write call summary moves metrics onto the first line when the result header omits them", () => {
   assert.equal(

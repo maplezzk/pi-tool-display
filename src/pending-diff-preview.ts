@@ -101,6 +101,29 @@ function countSubstringMatches(haystack: string, needle: string): number {
   return count;
 }
 
+function stripBom(content: string): { bom: string; text: string } {
+  return content.startsWith("\uFEFF")
+    ? { bom: "\uFEFF", text: content.slice(1) }
+    : { bom: "", text: content };
+}
+
+function detectLineEnding(content: string): "\r\n" | "\n" {
+  const crlfIndex = content.indexOf("\r\n");
+  const lfIndex = content.indexOf("\n");
+  if (lfIndex === -1 || crlfIndex === -1) {
+    return "\n";
+  }
+  return crlfIndex < lfIndex ? "\r\n" : "\n";
+}
+
+function normalizeToLf(content: string): string {
+  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function restoreLineEndings(content: string, ending: "\r\n" | "\n"): string {
+  return ending === "\r\n" ? content.replace(/\n/g, "\r\n") : content;
+}
+
 function toEditInput(value: unknown): EditPreviewInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -151,23 +174,38 @@ function buildProjectedEditContent(originalContent: string, replacements: readon
   if (replacements.length === 0) {
     return {
       ok: false,
-      reason: "Preview unavailable because the edit request did not include exact replacement blocks.",
+      reason: "Preview not shown: the edit request did not include exact replacement blocks.",
     };
   }
 
+  const { bom, text } = stripBom(originalContent);
+  const originalLineEnding = detectLineEnding(text);
+  const normalizedContent = normalizeToLf(text);
+  const normalizedReplacements = replacements.map((replacement) => ({
+    oldText: normalizeToLf(replacement.oldText),
+    newText: normalizeToLf(replacement.newText),
+  }));
+
   const ranges: Array<{ start: number; end: number; replacement: string }> = [];
-  for (const [index, replacement] of replacements.entries()) {
-    const matchCount = countSubstringMatches(originalContent, replacement.oldText);
+  for (const [index, replacement] of normalizedReplacements.entries()) {
+    if (!replacement.oldText) {
+      return {
+        ok: false,
+        reason: `Preview not shown: edit #${index + 1} has an empty oldText block.`,
+      };
+    }
+
+    const matchCount = countSubstringMatches(normalizedContent, replacement.oldText);
     if (matchCount !== 1) {
       return {
         ok: false,
         reason: matchCount === 0
-          ? `Preview unavailable because edit #${index + 1} did not match the current file contents.`
-          : `Preview unavailable because edit #${index + 1} matched ${matchCount} regions instead of exactly one.`,
+          ? `Preview not shown: edit #${index + 1} did not match the current file contents.`
+          : `Preview not shown: edit #${index + 1} matched ${matchCount} regions instead of exactly one.`,
       };
     }
 
-    const start = originalContent.indexOf(replacement.oldText);
+    const start = normalizedContent.indexOf(replacement.oldText);
     ranges.push({
       start,
       end: start + replacement.oldText.length,
@@ -182,7 +220,7 @@ function buildProjectedEditContent(originalContent: string, replacements: readon
     if (previous && current && current.start < previous.end) {
       return {
         ok: false,
-        reason: "Preview unavailable because the requested edits overlap in the original file.",
+        reason: "Preview not shown: the requested edits overlap in the original file.",
       };
     }
   }
@@ -190,15 +228,15 @@ function buildProjectedEditContent(originalContent: string, replacements: readon
   let cursor = 0;
   let output = "";
   for (const range of ranges) {
-    output += originalContent.slice(cursor, range.start);
+    output += normalizedContent.slice(cursor, range.start);
     output += range.replacement;
     cursor = range.end;
   }
-  output += originalContent.slice(cursor);
+  output += normalizedContent.slice(cursor);
 
   return {
     ok: true,
-    content: output,
+    content: `${bom}${restoreLineEndings(output, originalLineEnding)}`,
   };
 }
 
