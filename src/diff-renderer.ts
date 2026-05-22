@@ -1,5 +1,5 @@
-import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@mariozechner/pi-tui";
-import { getLanguageFromPath, highlightCode, type EditToolDetails } from "@mariozechner/pi-coding-agent";
+import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
+import { getLanguageFromPath, highlightCode, type EditToolDetails } from "@earendil-works/pi-coding-agent";
 import { ANSI_SGR_PATTERN, STYLE_RESET_PARAMS, toSgrParams } from "./ansi-utils.js";
 import {
 	buildCollapsedDiffHintText,
@@ -33,6 +33,7 @@ interface DiffLineEntry {
 	newLineNumber: number | null;
 	fallbackLineNumber: string;
 	content: string;
+	hashlineAnchorContent?: string;
 	raw: string;
 	hunkIndex: number;
 }
@@ -100,6 +101,7 @@ interface DiffRenderOptions {
 type CodeLineHighlighter = (line: string) => string;
 
 const CANONICAL_LINE_PATTERN = /^([+\- ])(\s*\d+)\|(.*)$/;
+const HASHLINE_ANCHOR_LINE_PATTERN = /^([+\- ])(\s*\d+)#([A-Za-z0-9]+| {2}):(.*)$/;
 const LEGACY_LINE_PATTERN = /^([+\- ])(\s*\d+)\s(.*)$/;
 const HUNK_HEADER_PATTERN = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
 const SPLIT_SEPARATOR = " │ ";
@@ -317,11 +319,47 @@ function createCodeLineHighlighter(language: string | undefined): CodeLineHighli
 	};
 }
 
+function toParsedDiffLine(
+	prefix: string,
+	lineNumber: string,
+	content: string,
+): {
+	lineKind: DiffLineKind;
+	lineNumber: string;
+	content: string;
+} {
+	const normalizedLineNumber = lineNumber.trim();
+	if (prefix === "+") {
+		return { lineKind: "add", lineNumber: normalizedLineNumber, content };
+	}
+	if (prefix === "-") {
+		return { lineKind: "remove", lineNumber: normalizedLineNumber, content };
+	}
+	return { lineKind: "context", lineNumber: normalizedLineNumber, content };
+}
+
 function parseCanonicalDiffLine(line: string): {
 	lineKind: DiffLineKind;
 	lineNumber: string;
 	content: string;
+	hashlineAnchorContent?: string;
 } | null {
+	const hashlineAnchorMatch = line.match(HASHLINE_ANCHOR_LINE_PATTERN);
+	if (hashlineAnchorMatch) {
+		const lineNumber = hashlineAnchorMatch[2] ?? "";
+		const hash = hashlineAnchorMatch[3] ?? "";
+		const content = hashlineAnchorMatch[4] ?? "";
+		const parsed = toParsedDiffLine(
+			hashlineAnchorMatch[1] ?? " ",
+			lineNumber,
+			content,
+		);
+		return {
+			...parsed,
+			hashlineAnchorContent: `${lineNumber.trim()}#${hash}:${content}`,
+		};
+	}
+
 	const canonicalMatch = line.match(CANONICAL_LINE_PATTERN);
 	const legacyMatch = canonicalMatch ? null : line.match(LEGACY_LINE_PATTERN);
 	const matched = canonicalMatch ?? legacyMatch;
@@ -329,16 +367,11 @@ function parseCanonicalDiffLine(line: string): {
 		return null;
 	}
 
-	const prefix = matched[1] ?? " ";
-	const lineNumber = (matched[2] ?? "").trim();
-	const content = matched[3] ?? "";
-	if (prefix === "+") {
-		return { lineKind: "add", lineNumber, content };
-	}
-	if (prefix === "-") {
-		return { lineKind: "remove", lineNumber, content };
-	}
-	return { lineKind: "context", lineNumber, content };
+	return toParsedDiffLine(
+		matched[1] ?? " ",
+		matched[2] ?? "",
+		matched[3] ?? "",
+	);
 }
 
 function toNumber(value: string | undefined): number | null {
@@ -501,6 +534,7 @@ function parseDiff(diffText: string): ParsedDiff {
 				newLineNumber,
 				fallbackLineNumber: canonical.lineNumber,
 				content: canonical.content,
+				hashlineAnchorContent: canonical.hashlineAnchorContent,
 				raw: rawLine,
 				hunkIndex,
 			});
@@ -596,12 +630,30 @@ function parseDiff(diffText: string): ParsedDiff {
 	return { entries, stats };
 }
 
-function getLineNumberWidth(entries: ParsedDiffEntry[]): number {
+function getHashlineAnchorLabel(entry: DiffLineEntry): string | undefined {
+	if (!entry.hashlineAnchorContent) {
+		return undefined;
+	}
+	const separatorIndex = entry.hashlineAnchorContent.indexOf(":");
+	return separatorIndex >= 0
+		? entry.hashlineAnchorContent.slice(0, separatorIndex)
+		: entry.hashlineAnchorContent;
+}
+
+function getLineNumberWidth(entries: ParsedDiffEntry[], showHashlineAnchors = false): number {
 	let maxWidth = MIN_LINE_NUMBER_WIDTH;
 
 	for (const entry of entries) {
 		if (entry.kind !== "line") {
 			continue;
+		}
+
+		if (showHashlineAnchors) {
+			const anchorLabel = getHashlineAnchorLabel(entry);
+			if (anchorLabel) {
+				maxWidth = Math.max(maxWidth, visibleWidth(anchorLabel));
+				continue;
+			}
 		}
 
 		const candidates = [
@@ -629,6 +681,20 @@ function formatLineNumber(value: number | null, fallback: string, width: number)
 		return fallback.trim().slice(-width).padStart(width, " ");
 	}
 	return " ".repeat(width);
+}
+
+function formatLineNumberLabel(
+	entry: DiffLineEntry,
+	value: number | null,
+	fallback: string,
+	width: number,
+	showHashlineAnchors: boolean,
+): string {
+	const anchorLabel = showHashlineAnchors ? getHashlineAnchorLabel(entry) : undefined;
+	if (anchorLabel) {
+		return fitToWidth(anchorLabel, width);
+	}
+	return formatLineNumber(value, fallback, width);
 }
 
 function formatMetaEntryRows(entry: DiffMetaEntry, width: number, theme: DiffTheme, wordWrap: boolean): RenderedRow[] {
@@ -910,6 +976,12 @@ function computeInlineDiffSpans(leftLine: string, rightLine: string): { left: Di
 		left: tokensToDiffSpans(leftLine, leftTokens, changedLeft),
 		right: tokensToDiffSpans(rightLine, rightTokens, changedRight),
 	};
+}
+
+function getCompactLineRenderContent(entry: DiffLineEntry, showHashlineAnchors: boolean): string {
+	return showHashlineAnchors && entry.hashlineAnchorContent
+		? entry.hashlineAnchorContent
+		: entry.content;
 }
 
 function buildInlineHighlightMap(rows: SplitDiffRow[]): WeakMap<DiffLineEntry, DiffSpan[]> {
@@ -1291,7 +1363,18 @@ function renderChangeMarker(
 	return colorizeSegment(theme, "dim", glyph, rowBg);
 }
 
-function getLineDividerPlainWidth(indicatorMode: DiffIndicatorMode): number {
+function usesHashlineGutter(showHashlineAnchors: boolean): boolean {
+	return showHashlineAnchors;
+}
+
+function getHashlineGutterMarkerWidth(_indicatorMode: DiffIndicatorMode): number {
+	return 0;
+}
+
+function getLineDividerPlainWidth(indicatorMode: DiffIndicatorMode, hashlineGutter = false): number {
+	if (hashlineGutter) {
+		return 2;
+	}
 	return indicatorMode === "classic" ? 1 : 2;
 }
 
@@ -1299,8 +1382,9 @@ function renderCodeDivider(
 	theme: DiffTheme,
 	rowBg: string | undefined,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string {
-	return colorizeSegment(theme, "dim", indicatorMode === "classic" ? "│" : "│ ", rowBg);
+	return colorizeSegment(theme, "dim", hashlineGutter || indicatorMode !== "classic" ? "│ " : "│", rowBg);
 }
 
 function getLineNumberColor(kind: DiffLineKind): "dim" | "toolDiffAdded" | "toolDiffRemoved" {
@@ -1322,7 +1406,10 @@ function renderLineNumberSegment(
 	return colorizeSegment(theme, getLineNumberColor(kind), lineNumber, rowBg);
 }
 
-function getLinePrefixPlainWidth(lineNumberWidth: number, indicatorMode: DiffIndicatorMode): number {
+function getLinePrefixPlainWidth(lineNumberWidth: number, indicatorMode: DiffIndicatorMode, hashlineGutter = false): number {
+	if (hashlineGutter) {
+		return getHashlineGutterMarkerWidth(indicatorMode) + lineNumberWidth;
+	}
 	return indicatorMode === "bars"
 		? visibleWidth(`▌ ${" ".repeat(lineNumberWidth)} `)
 		: visibleWidth(`${" ".repeat(lineNumberWidth)} `);
@@ -1355,8 +1442,12 @@ function renderLinePrefix(
 	rowBg: string | undefined,
 	indicatorMode: DiffIndicatorMode,
 	continuation = false,
+	hashlineGutter = false,
 ): string {
 	const number = renderLineNumberSegment(kind, lineNumber, theme, rowBg);
+	if (hashlineGutter) {
+		return number;
+	}
 	const spacer = rowBg ? `${rowBg} ` : " ";
 	if (indicatorMode !== "bars") {
 		return `${number}${spacer}`;
@@ -1371,9 +1462,10 @@ function renderLineContinuationPrefix(
 	rowBg: string | undefined,
 	theme: DiffTheme,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string {
 	const blankLineNumber = " ".repeat(lineNumberWidth);
-	return renderLinePrefix(kind, blankLineNumber, theme, rowBg, indicatorMode, true);
+	return renderLinePrefix(kind, blankLineNumber, theme, rowBg, indicatorMode, true, hashlineGutter);
 }
 
 function renderLineContentIndicatorPrefix(
@@ -1444,20 +1536,21 @@ function renderLineCell(
 	theme: DiffTheme,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string[] {
 	if (width <= 0) {
 		return [""];
 	}
 
-	const prefixPlainWidth = getLinePrefixPlainWidth(lineNumber.length, indicatorMode);
-	const dividerPlainWidth = getLineDividerPlainWidth(indicatorMode);
-	const contentIndicatorWidth = getLineContentIndicatorPrefixPlainWidth(indicatorMode);
+	const prefixPlainWidth = getLinePrefixPlainWidth(lineNumber.length, indicatorMode, hashlineGutter);
+	const dividerPlainWidth = getLineDividerPlainWidth(indicatorMode, hashlineGutter);
+	const contentIndicatorWidth = hashlineGutter ? 0 : getLineContentIndicatorPrefixPlainWidth(indicatorMode);
 	const codeWidth = Math.max(0, width - prefixPlainWidth - dividerPlainWidth - contentIndicatorWidth);
-	const prefix = renderLinePrefix(kind, lineNumber, theme, undefined, indicatorMode);
-	const continuationPrefix = renderLineContinuationPrefix(kind, lineNumber.length, undefined, theme, indicatorMode);
-	const divider = renderCodeDivider(theme, undefined, indicatorMode);
-	const firstContentPrefix = renderLineContentIndicatorPrefix(kind, theme, undefined, indicatorMode);
-	const continuationContentPrefix = renderLineContentIndicatorPrefix(kind, theme, undefined, indicatorMode, true);
+	const prefix = renderLinePrefix(kind, lineNumber, theme, undefined, indicatorMode, false, hashlineGutter);
+	const continuationPrefix = renderLineContinuationPrefix(kind, lineNumber.length, undefined, theme, indicatorMode, hashlineGutter);
+	const divider = renderCodeDivider(theme, undefined, indicatorMode, hashlineGutter);
+	const firstContentPrefix = hashlineGutter ? "" : renderLineContentIndicatorPrefix(kind, theme, undefined, indicatorMode);
+	const continuationContentPrefix = hashlineGutter ? "" : renderLineContentIndicatorPrefix(kind, theme, undefined, indicatorMode, true);
 	const wrappedCodeLines = wrapToWidth(code, codeWidth, wordWrap);
 
 	if (!rowBg) {
@@ -1488,6 +1581,7 @@ function renderUnified(
 	containerBgAnsi: string | undefined,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	showHashlineAnchors: boolean,
 ): RenderedRow[] {
 	const rows: RenderedRow[] = [];
 
@@ -1498,8 +1592,8 @@ function renderUnified(
 		}
 
 		const lineNumber = entry.lineKind === "add"
-			? formatLineNumber(entry.newLineNumber, entry.fallbackLineNumber, lineNumberWidth)
-			: formatLineNumber(entry.oldLineNumber, entry.fallbackLineNumber, lineNumberWidth);
+			? formatLineNumberLabel(entry, entry.newLineNumber, entry.fallbackLineNumber, lineNumberWidth, showHashlineAnchors)
+			: formatLineNumberLabel(entry, entry.oldLineNumber, entry.fallbackLineNumber, lineNumberWidth, showHashlineAnchors);
 		const codeText = normalizeCodeWhitespace(entry.content);
 		const syntaxHighlighted = highlightLine(codeText);
 		const rowBg = getLineRowBackground(entry.lineKind, palette);
@@ -1516,6 +1610,7 @@ function renderUnified(
 			theme,
 			wordWrap,
 			indicatorMode,
+			usesHashlineGutter(showHashlineAnchors),
 		);
 
 		rows.push(
@@ -1540,6 +1635,7 @@ function toUnifiedFallbackRows(
 	containerBgAnsi: string | undefined,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	showHashlineAnchors: boolean,
 ): RenderedRow[] {
 	const flattened: ParsedDiffEntry[] = [];
 	for (const row of rows) {
@@ -1565,6 +1661,7 @@ function toUnifiedFallbackRows(
 		containerBgAnsi,
 		wordWrap,
 		indicatorMode,
+		showHashlineAnchors,
 	);
 }
 
@@ -1578,6 +1675,7 @@ function renderCompact(
 	containerBgAnsi: string | undefined,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	showHashlineAnchors: boolean,
 ): RenderedRow[] {
 	const rows: RenderedRow[] = [];
 
@@ -1587,7 +1685,7 @@ function renderCompact(
 			continue;
 		}
 
-		const codeText = normalizeCodeWhitespace(entry.content);
+		const codeText = normalizeCodeWhitespace(getCompactLineRenderContent(entry, showHashlineAnchors));
 		const syntaxHighlighted = highlightLine(codeText);
 		const rowBg = getLineRowBackground(entry.lineKind, palette);
 		const emphasisBg = getLineEmphasisBackground(entry.lineKind, palette);
@@ -1620,14 +1718,15 @@ function renderSplitBlankCell(
 	lineNumberWidth: number,
 	theme: DiffTheme,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string {
-	const prefixPlainWidth = getLinePrefixPlainWidth(lineNumberWidth, indicatorMode);
-	const dividerPlainWidth = getLineDividerPlainWidth(indicatorMode);
-	const contentIndicatorWidth = getLineContentIndicatorPrefixPlainWidth(indicatorMode);
+	const prefixPlainWidth = getLinePrefixPlainWidth(lineNumberWidth, indicatorMode, hashlineGutter);
+	const dividerPlainWidth = getLineDividerPlainWidth(indicatorMode, hashlineGutter);
+	const contentIndicatorWidth = hashlineGutter ? 0 : getLineContentIndicatorPrefixPlainWidth(indicatorMode);
 	const codeWidth = Math.max(0, columnWidth - prefixPlainWidth - dividerPlainWidth - contentIndicatorWidth);
-	const prefix = renderLinePrefix("context", " ".repeat(lineNumberWidth), theme, undefined, indicatorMode, true);
-	const divider = renderCodeDivider(theme, undefined, indicatorMode);
-	const contentPrefix = renderLineContentIndicatorPrefix("context", theme, undefined, indicatorMode, true);
+	const prefix = renderLinePrefix("context", " ".repeat(lineNumberWidth), theme, undefined, indicatorMode, true, hashlineGutter);
+	const divider = renderCodeDivider(theme, undefined, indicatorMode, hashlineGutter);
+	const contentPrefix = hashlineGutter ? "" : renderLineContentIndicatorPrefix("context", theme, undefined, indicatorMode, true);
 	return stabilizeBackgroundResets(`${prefix}${divider}${contentPrefix}${" ".repeat(codeWidth)}`);
 }
 
@@ -1643,12 +1742,14 @@ function renderSplitCell(
 	containerBgAnsi: string | undefined,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	showHashlineAnchors: boolean,
 ): string[] {
+	const hashlineGutter = usesHashlineGutter(showHashlineAnchors);
 	if (!line) {
-		return [renderSplitBlankCell(columnWidth, lineNumberWidth, theme, indicatorMode)];
+		return [renderSplitBlankCell(columnWidth, lineNumberWidth, theme, indicatorMode, hashlineGutter)];
 	}
 
-	const lineNumber = formatLineNumber(getCellLineNumber(line, side), line.fallbackLineNumber, lineNumberWidth);
+	const lineNumber = formatLineNumberLabel(line, getCellLineNumber(line, side), line.fallbackLineNumber, lineNumberWidth, showHashlineAnchors);
 	const rowBg = getLineRowBackground(line.lineKind, palette);
 	const emphasisBg = getLineEmphasisBackground(line.lineKind, palette);
 	const codeText = normalizeCodeWhitespace(line.content);
@@ -1665,6 +1766,7 @@ function renderSplitCell(
 		theme,
 		wordWrap,
 		indicatorMode,
+		hashlineGutter,
 	);
 }
 
@@ -1688,10 +1790,11 @@ function renderSplitTopBorderCell(
 	lineNumberWidth: number,
 	theme: DiffTheme,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string {
 	const safeColumnWidth = Math.max(1, columnWidth);
 	const chars = "─".repeat(safeColumnWidth).split("");
-	const dividerIndex = getLinePrefixPlainWidth(lineNumberWidth, indicatorMode);
+	const dividerIndex = getLinePrefixPlainWidth(lineNumberWidth, indicatorMode, hashlineGutter);
 	if (dividerIndex >= 0 && dividerIndex < chars.length) {
 		chars[dividerIndex] = "┬";
 	}
@@ -1704,13 +1807,18 @@ function renderSplitHeaderCell(
 	lineNumberWidth: number,
 	theme: DiffTheme,
 	indicatorMode: DiffIndicatorMode,
+	hashlineGutter = false,
 ): string {
-	const markerPad = indicatorMode === "bars" ? "  " : "";
+	const markerPad = hashlineGutter
+		? " ".repeat(getHashlineGutterMarkerWidth(indicatorMode))
+		: indicatorMode === "bars" ? "  " : "";
 	const lineNumberLabel = fitToWidth(label, lineNumberWidth);
-	const prefix = `${theme.fg("dim", markerPad)}${theme.fg("muted", lineNumberLabel)}${theme.fg("dim", " │ ")}`;
-	const prefixWidth = visibleWidth(`${markerPad}${lineNumberLabel} │ `);
-	const codeWidth = Math.max(0, columnWidth - prefixWidth - getLineContentIndicatorPrefixPlainWidth(indicatorMode));
-	const contentPad = indicatorMode === "classic" ? "  " : "";
+	const divider = hashlineGutter || indicatorMode !== "classic" ? "│ " : " │ ";
+	const prefix = `${theme.fg("dim", markerPad)}${theme.fg("muted", lineNumberLabel)}${theme.fg("dim", divider)}`;
+	const prefixWidth = visibleWidth(`${markerPad}${lineNumberLabel}${divider}`);
+	const contentIndicatorWidth = hashlineGutter ? 0 : getLineContentIndicatorPrefixPlainWidth(indicatorMode);
+	const codeWidth = Math.max(0, columnWidth - prefixWidth - contentIndicatorWidth);
+	const contentPad = !hashlineGutter && indicatorMode === "classic" ? "  " : "";
 	return stabilizeBackgroundResets(`${prefix}${contentPad}${" ".repeat(codeWidth)}`);
 }
 
@@ -1731,6 +1839,7 @@ function renderSplit(
 	containerBgAnsi: string | undefined,
 	wordWrap: boolean,
 	indicatorMode: DiffIndicatorMode,
+	showHashlineAnchors: boolean,
 ): RenderedRow[] {
 	if (!canRenderSplitLayout(width)) {
 		return toUnifiedFallbackRows(
@@ -1744,6 +1853,7 @@ function renderSplit(
 			containerBgAnsi,
 			wordWrap,
 			indicatorMode,
+			showHashlineAnchors,
 		);
 	}
 
@@ -1751,15 +1861,16 @@ function renderSplit(
 	const leftWidth = Math.max(MIN_SPLIT_COLUMN_WIDTH, Math.floor((width - separatorWidth) / 2));
 	const rightWidth = Math.max(MIN_SPLIT_COLUMN_WIDTH, width - separatorWidth - leftWidth);
 	const splitLineNumberWidth = Math.max(3, lineNumberWidth);
+	const hashlineGutter = usesHashlineGutter(showHashlineAnchors);
 	const separator = renderSplitDivider(theme, containerBgAnsi);
 	const topSeparator = renderSplitDivider(theme, containerBgAnsi, "─┬─");
 	const output: RenderedRow[] = [];
 	output.push({
-		text: `${renderSplitTopBorderCell(leftWidth, splitLineNumberWidth, theme, indicatorMode)}${topSeparator}${renderSplitTopBorderCell(rightWidth, splitLineNumberWidth, theme, indicatorMode)}`,
+		text: `${renderSplitTopBorderCell(leftWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter)}${topSeparator}${renderSplitTopBorderCell(rightWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter)}`,
 		hunkIndex: null,
 	});
 	output.push({
-		text: `${renderSplitHeaderCell("old", leftWidth, splitLineNumberWidth, theme, indicatorMode)}${separator}${renderSplitHeaderCell("new", rightWidth, splitLineNumberWidth, theme, indicatorMode)}`,
+		text: `${renderSplitHeaderCell("old", leftWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter)}${separator}${renderSplitHeaderCell("new", rightWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter)}`,
 		hunkIndex: null,
 	});
 
@@ -1781,6 +1892,7 @@ function renderSplit(
 			containerBgAnsi,
 			wordWrap,
 			indicatorMode,
+			showHashlineAnchors,
 		);
 		const rightCells = renderSplitCell(
 			row.right,
@@ -1794,12 +1906,13 @@ function renderSplit(
 			containerBgAnsi,
 			wordWrap,
 			indicatorMode,
+			showHashlineAnchors,
 		);
 
 		const rowCount = Math.max(leftCells.length, rightCells.length);
 		for (let index = 0; index < rowCount; index++) {
-			const leftCell = leftCells[index] ?? renderSplitBlankCell(leftWidth, splitLineNumberWidth, theme, indicatorMode);
-			const rightCell = rightCells[index] ?? renderSplitBlankCell(rightWidth, splitLineNumberWidth, theme, indicatorMode);
+			const leftCell = leftCells[index] ?? renderSplitBlankCell(leftWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter);
+			const rightCell = rightCells[index] ?? renderSplitBlankCell(rightWidth, splitLineNumberWidth, theme, indicatorMode, hashlineGutter);
 			output.push({ text: `${leftCell}${separator}${rightCell}`, hunkIndex: row.hunkIndex });
 		}
 	}
@@ -2024,8 +2137,9 @@ export function renderEditDiffResult(
 	}
 
 	const splitRows = buildSplitRows(parsed.entries);
-	const inlineHighlights = buildInlineHighlightMap(splitRows);
-	const lineNumberWidth = getLineNumberWidth(parsed.entries);
+	const showHashlineAnchors = options.expanded === true
+		&& parsed.entries.some((entry) => entry.kind === "line" && !!entry.hashlineAnchorContent);
+	const lineNumberWidth = getLineNumberWidth(parsed.entries, showHashlineAnchors);
 	const palette = resolveDiffPalette(theme);
 	const containerBgAnsi = resolveContainerBackgroundAnsi(theme);
 	const language = resolveLanguageFromPath(options.filePath);
@@ -2060,6 +2174,7 @@ export function renderEditDiffResult(
 			}
 
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
+			const inlineHighlights = buildInlineHighlightMap(splitRows);
 			const bodyRows = mode === "split"
 				? renderSplit(
 					splitRows,
@@ -2072,6 +2187,7 @@ export function renderEditDiffResult(
 					containerBgAnsi,
 					wordWrap,
 					indicatorMode,
+					showHashlineAnchors,
 				)
 				: mode === "compact"
 					? renderCompact(
@@ -2084,6 +2200,7 @@ export function renderEditDiffResult(
 						containerBgAnsi,
 						wordWrap,
 						indicatorMode,
+						showHashlineAnchors,
 					)
 					: renderUnified(
 						parsed.entries,
@@ -2096,6 +2213,7 @@ export function renderEditDiffResult(
 						containerBgAnsi,
 						wordWrap,
 						indicatorMode,
+						showHashlineAnchors,
 					);
 			const bodyWithLimit = applyLineLimit(
 				bodyRows,
@@ -2493,6 +2611,7 @@ export function renderWriteDiffResult(
 						containerBgAnsi,
 						wordWrap,
 						indicatorMode,
+						false,
 					)
 					: mode === "compact"
 						? renderCompact(
@@ -2505,6 +2624,7 @@ export function renderWriteDiffResult(
 							containerBgAnsi,
 							wordWrap,
 							indicatorMode,
+							false,
 						)
 						: renderUnified(
 							data.entries,
@@ -2517,6 +2637,7 @@ export function renderWriteDiffResult(
 							containerBgAnsi,
 							wordWrap,
 							indicatorMode,
+							false,
 						);
 
 			const bodyWithLimit = applyLineLimit(

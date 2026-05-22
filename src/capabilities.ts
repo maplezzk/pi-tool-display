@@ -1,5 +1,5 @@
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { existsSync } from "node:fs";
+import { getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { logToolDisplayDebug } from "./debug-logger.js";
 import { isMcpToolCandidate } from "./tool-metadata.js";
@@ -30,21 +30,38 @@ function hasRtkCommand(pi: ExtensionAPI): boolean {
 	}
 }
 
+const rtkPathProbeCache = new Map<string, { fingerprint: string; exists: boolean }>();
+
+function getPathFingerprint(path: string): string {
+	try {
+		const stats = statSync(path);
+		return `${stats.mtimeMs}:${stats.size}`;
+	} catch {
+		return "missing";
+	}
+}
+
+function cachedPathExists(path: string): boolean {
+	const fingerprint = getPathFingerprint(path);
+	const cached = rtkPathProbeCache.get(path);
+	if (cached && cached.fingerprint === fingerprint) {
+		return cached.exists;
+	}
+
+	let exists = false;
+	try {
+		exists = existsSync(path);
+	} catch (error) {
+		logToolDisplayDebug(`RTK capability path probe failed for ${path}.`, error);
+	}
+	rtkPathProbeCache.set(path, { fingerprint, exists });
+	return exists;
+}
+
 function hasRtkExtensionPath(cwd: string): boolean {
 	const candidates = [join(getAgentDir(), "extensions", "pi-rtk-optimizer"), join(cwd, ".pi", "extensions", "pi-rtk-optimizer")];
 
-	for (const candidate of candidates) {
-		try {
-			if (existsSync(candidate)) {
-				return true;
-			}
-		} catch (error) {
-			logToolDisplayDebug(`RTK capability path probe failed for ${candidate}.`, error);
-			// Ignore filesystem errors and continue probing other candidates.
-		}
-	}
-
-	return false;
+	return candidates.some((candidate) => cachedPathExists(candidate));
 }
 
 export function detectToolDisplayCapabilities(pi: ExtensionAPI, cwd: string): ToolDisplayCapabilities {

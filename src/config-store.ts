@@ -1,5 +1,5 @@
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
 	BUILT_IN_TOOL_OVERRIDE_NAMES,
@@ -86,6 +86,30 @@ function cloneDefaultConfig(): ToolDisplayConfig {
 	};
 }
 
+let cachedConfigFile: string | undefined;
+let cachedConfigFingerprint: string | undefined;
+let cachedConfigResult: ConfigLoadResult | undefined;
+
+function cloneConfig(config: ToolDisplayConfig): ToolDisplayConfig {
+	return normalizeToolDisplayConfig(config);
+}
+
+function cloneLoadResult(result: ConfigLoadResult): ConfigLoadResult {
+	return {
+		...result,
+		config: cloneConfig(result.config),
+	};
+}
+
+function getConfigFingerprint(configFile: string): string {
+	try {
+		const stats = statSync(configFile);
+		return `${stats.mtimeMs}:${stats.size}`;
+	} catch {
+		return "missing";
+	}
+}
+
 function normalizeToolOverrideOwnership(
 	rawOverrides: unknown,
 	legacyRegisterReadToolOverride: unknown,
@@ -142,21 +166,32 @@ export function normalizeToolDisplayConfig(raw: unknown): ToolDisplayConfig {
 }
 
 export function loadToolDisplayConfig(configFile = CONFIG_FILE): ConfigLoadResult {
-	if (!existsSync(configFile)) {
-		return { config: cloneDefaultConfig() };
+	const fingerprint = getConfigFingerprint(configFile);
+	if (cachedConfigResult && cachedConfigFile === configFile && cachedConfigFingerprint === fingerprint) {
+		return cloneLoadResult(cachedConfigResult);
 	}
 
-	try {
-		const rawText = readFileSync(configFile, "utf-8");
-		const rawConfig = JSON.parse(rawText) as unknown;
-		return { config: normalizeToolDisplayConfig(rawConfig) };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			config: cloneDefaultConfig(),
-			error: `Failed to parse ${configFile}: ${message}`,
-		};
+	let result: ConfigLoadResult;
+	if (!existsSync(configFile)) {
+		result = { config: cloneDefaultConfig() };
+	} else {
+		try {
+			const rawText = readFileSync(configFile, "utf-8");
+			const rawConfig = JSON.parse(rawText) as unknown;
+			result = { config: normalizeToolDisplayConfig(rawConfig) };
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			result = {
+				config: cloneDefaultConfig(),
+				error: `Failed to parse ${configFile}: ${message}`,
+			};
+		}
 	}
+
+	cachedConfigFile = configFile;
+	cachedConfigFingerprint = fingerprint;
+	cachedConfigResult = cloneLoadResult(result);
+	return result;
 }
 
 export function saveToolDisplayConfig(config: ToolDisplayConfig, configFile = CONFIG_FILE): ConfigSaveResult {
@@ -167,6 +202,9 @@ export function saveToolDisplayConfig(config: ToolDisplayConfig, configFile = CO
 		mkdirSync(dirname(configFile), { recursive: true });
 		writeFileSync(tmpFile, `${JSON.stringify(normalized, null, 2)}\n`, "utf-8");
 		renameSync(tmpFile, configFile);
+		cachedConfigFile = undefined;
+		cachedConfigFingerprint = undefined;
+		cachedConfigResult = undefined;
 		return { success: true };
 	} catch (error) {
 		try {
