@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-26
+
+### Added
+- Reload-safe extension lifecycle: `src/disposable.ts` cleanup registry that disposes all tool overrides, prototype patches, timers, and event handlers on `session_shutdown(reason: "reload")`, preventing orphaned pi-mono default rendering after `/reload`.
+- Comprehensive test suite with 15 new test files covering reload behavior, bash display, MCP overrides, ANSI utilities, diff renderer edge cases, user message boxes, thinking labels, render utilities, and integration tests (696 total tests, up from 68).
+
+### Fixed
+- Bash display now respects `shellPath` and `commandPrefix` from `settings.json` when present (#21).
+- Bash spinner timer reworked to use toolCallId-keyed Map instead of `__piToolDisplayBashSpinner`, with interval reduced from 80ms to 200ms, defensive `invalidate()` check, and all timers registered in the cleanup registry (#19).
+- Bash override registration is now deferred (like read/grep/edit) and uses `before_agent_start` to discover ownership via `pi.getAllTools()` before overriding, preventing conflicts with other extensions (#17). Thanks to @iwinux for reporting.
+- `pi.registerTool` is now intercepted to decorate MCP tools as they register, eliminating a race condition where `session_start`/`before_agent_start` fire before `pi-mcp-adapter` finishes registering tools (#15, #18). Thanks to @dashanlkk for reporting and opening PR #18.
+- `isMcpToolCandidate()` heuristics expanded to match `mcp`, `mcp_*`, `*_mcp`, names containing `server:` or starting with `ctx_`, and parameter schemas containing `mcpServer`, `serverUrl`, or `server_name`, catching many MCP servers that were previously false negatives.
+- `stripBackgroundSgrParams()` now correctly preserves foreground RGB sequences like `38;2;12;49;200m` instead of misinterpreting color component `49` as a background reset (#8, #3). Thanks to @michaelrommel for the patch and @w-winter for reporting.
+- `patchUserMessageRenderPrototype` now restores stale patches from prior extension instances before re-patching, and `registerNativeUserMessageBox` has a duplicate-prevention guard with `session_shutdown` restoration (#10). OSC 133 stripping is now scoped to prompt-control sequences only; OSC 8 hyperlinks are preserved. Thanks to @w-winter for reporting.
+- Thinking label duplicate-prevention guard prevents re-registering event handlers across reloads; `session_shutdown(reason: "reload")` resets the guard so re-registration works after reload; recursive nested-array handling added for malformed thinking content (#2). Thanks to @agustif for PR #2.
+- `registerDeferredBuiltInToolOverrides()` is now also called on `session_start` (not just `before_agent_start`), fixing a reload bug where read/grep/edit/bash tools fell back to default pi-mono rendering.
+
 ## [0.4.0] - 2026-05-22
 
 ### Added
