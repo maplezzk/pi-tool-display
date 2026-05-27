@@ -70,11 +70,41 @@ export function extractPromptMetadata(tool: unknown): PromptMetadata {
 }
 
 export function isMcpToolCandidate(tool: unknown): boolean {
-	const name = getTextField(tool, "name");
+	if (!tool || typeof tool !== "object") {
+		return false;
+	}
+
+	const record = tool as Record<string, unknown>;
+	const name = typeof record.name === "string" ? record.name : "";
+	const description = typeof record.description === "string" ? record.description : "";
+
 	if (name === "mcp") {
 		return true;
 	}
+	if (MCP_DESCRIPTION_PATTERN.test(description)) {
+		return true;
+	}
+	if (/^mcp[_-]/i.test(name) || /_mcp$/i.test(name)) {
+		return true;
+	}
+	if (name.includes(":")) {
+		return true;
+	}
+	if (/^ctx_/i.test(name)) {
+		return true;
+	}
 
-	const description = getTextField(tool, "description");
-	return typeof description === "string" && MCP_DESCRIPTION_PATTERN.test(description);
+	const params = record.parameters;
+	if (params && typeof params === "object") {
+		const parameterRecord = params as Record<string, unknown>;
+		if (
+			"mcpServer" in parameterRecord ||
+			"serverUrl" in parameterRecord ||
+			"server_name" in parameterRecord
+		) {
+			return true;
+		}
+	}
+
+	return false;
 }
