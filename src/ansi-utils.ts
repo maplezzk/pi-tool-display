@@ -35,16 +35,38 @@ export function stripBackgroundSgrParams(params: readonly number[]): number[] {
       continue;
     }
 
-    if (param === 48) {
+    if (param === 38 || param === 48) {
       const colorMode = params[index + 1];
       if (colorMode === 5) {
+        if (param === 38) {
+          const colorValue = params[index + 2];
+          if (Number.isFinite(colorValue)) {
+            sanitized.push(param, colorMode, colorValue);
+          } else {
+            sanitized.push(param);
+          }
+        }
         index += 2;
         continue;
       }
       if (colorMode === 2) {
+        if (param === 38) {
+          const red = params[index + 2];
+          const green = params[index + 3];
+          const blue = params[index + 4];
+          if (Number.isFinite(red) && Number.isFinite(green) && Number.isFinite(blue)) {
+            sanitized.push(param, colorMode, red, green, blue);
+          } else {
+            sanitized.push(param);
+          }
+        }
         index += 4;
         continue;
       }
+      if (param === 48) {
+        continue;
+      }
+      sanitized.push(param);
       continue;
     }
 
