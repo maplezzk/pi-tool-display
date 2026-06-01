@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-01
+
+### Changed
+- Deferred config modal, settings inspector, and built-in tool metadata loading until needed to reduce startup work.
+- Replaced shared agent-directory lookup with a local `PI_CODING_AGENT_DIR`-aware resolver for config and capability checks.
+- Widened peer dependency ranges to `^0.74.0 || ^0.75.0 || ^0.77.0 || ^0.78.0`.
+
+### Fixed
+- Corrected classic-mode diff line-number gutter spacing.
+
 ## [0.4.1] - 2026-05-26
 
 ### Added
