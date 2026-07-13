@@ -4,6 +4,7 @@ import type {
   BashToolDetails,
   EditToolDetails,
   ExtensionAPI,
+  ExtensionContext,
   FindToolDetails,
   GrepToolDetails,
   LsToolDetails,
@@ -146,6 +147,7 @@ const WRITE_PENDING_PREVIEW_STATE_KEY = "__piToolDisplayWritePendingPreview";
 
 const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
 const TOOL_DISPLAY_PENDING_DECORATIONS_KEY = Symbol.for("pi-tool-display.pendingDecorations.v1");
+const TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY = Symbol.for("pi-tool-display.pendingExecutionMiddlewares.v1");
 const TOOL_DISPLAY_REGISTER_TOOL_INTERCEPTOR_KEY = Symbol.for("pi-tool-display.registerToolInterceptor.v1");
 const TOOL_DISPLAY_DECORATED_PROPERTIES = [
   "renderCall",
@@ -173,16 +175,42 @@ export interface ToolDisplayAdapter {
   renderResult?: (result: unknown, options: ToolRenderResultOptions, theme: RenderTheme, context?: ToolRenderContextLike) => unknown;
 }
 
+export interface ToolExecutionContext {
+  toolName: string;
+  toolCallId: string;
+  params: Record<string, unknown>;
+  signal: AbortSignal | undefined;
+  onUpdate: unknown;
+  ctx: ExtensionContext;
+}
+
+export type ToolExecutionMiddleware = (
+  context: ToolExecutionContext,
+  next: () => Promise<unknown>,
+) => Promise<unknown>;
+
 export interface ToolDisplayApi {
   version: 1;
   decorateTool<T extends RuntimeToolDefinition>(tool: T, adapter?: ToolDisplayAdapter): T;
   registerAdapter(adapter: ToolDisplayAdapter): string;
   unregisterAdapter(id: string): boolean;
+  registerExecutionMiddleware(toolName: string, middleware: ToolExecutionMiddleware): string;
+  unregisterExecutionMiddleware(id: string): boolean;
+  executeWithMiddleware<T>(
+    toolName: string,
+    context: ToolExecutionContext,
+    terminal: () => Promise<T>,
+  ): Promise<T>;
 }
 
 interface PendingToolDisplayDecoration {
   tool: RuntimeToolDefinition;
   adapter?: ToolDisplayAdapter;
+}
+
+interface PendingToolExecutionMiddleware {
+  toolName: string;
+  middleware: ToolExecutionMiddleware;
 }
 
 type DecoratedPropertyName = typeof TOOL_DISPLAY_DECORATED_PROPERTIES[number];
@@ -191,6 +219,7 @@ type ToolPropertyDescriptorSnapshot = Partial<Record<DecoratedPropertyName, Prop
 type GlobalWithToolDisplayApi = typeof globalThis & {
   [TOOL_DISPLAY_API_KEY]?: ToolDisplayApi;
   [TOOL_DISPLAY_PENDING_DECORATIONS_KEY]?: PendingToolDisplayDecoration[];
+  [TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY]?: PendingToolExecutionMiddleware[];
 };
 
 type PiWithRegisterToolInterception = ExtensionAPI & {
@@ -940,17 +969,28 @@ function formatSearchSummary(
   return summary;
 }
 
+type BashSummaryDetails = BashToolDetails & {
+  summaryText?: string;
+};
+
 function formatBashSummary(
   lines: string[],
-  _details: BashToolDetails | undefined,
+  details: BashToolDetails | undefined,
   theme: RenderTheme,
   _showTruncationHints: boolean,
 ): string {
   const lineCount = lines.length;
-  return theme.fg(
+  let summary = theme.fg(
     "muted",
     `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
   );
+  const summaryDetails = details as BashSummaryDetails | undefined;
+
+  if (summaryDetails?.summaryText) {
+    summary += `\n${theme.fg("accent", "📌 总结结果：")}\n${sanitizeAnsiForThemedOutput(summaryDetails.summaryText)}`;
+  }
+
+  return summary;
 }
 
 function formatBashTruncationHints(
@@ -1488,9 +1528,28 @@ function drainPendingToolDisplayDecorations(api: ToolDisplayApi): void {
   }
 }
 
+function drainPendingToolExecutionMiddlewares(api: ToolDisplayApi): void {
+  const globalWithApi = globalThis as GlobalWithToolDisplayApi;
+  const pendingMiddlewares = globalWithApi[TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY];
+  if (!Array.isArray(pendingMiddlewares) || pendingMiddlewares.length === 0) {
+    return;
+  }
+
+  const entries = pendingMiddlewares.splice(0);
+  for (const entry of entries) {
+    if (!entry?.toolName || typeof entry.middleware !== "function") {
+      continue;
+    }
+
+    api.registerExecutionMiddleware(entry.toolName, entry.middleware);
+  }
+}
+
 function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
   const adapters = new Map<string, ToolDisplayAdapter>();
+  const executionMiddlewares = new Map<string, Map<string, ToolExecutionMiddleware>>();
   let nextAdapterId = 0;
+  let nextMiddlewareId = 0;
 
   const resolveAdapter = (tool: RuntimeToolDefinition, adapter?: ToolDisplayAdapter): ToolDisplayAdapter => {
     if (adapter) {
@@ -1560,10 +1619,53 @@ function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
       }
       return removed;
     },
+    registerExecutionMiddleware(toolName: string, middleware: ToolExecutionMiddleware): string {
+      const id = `middleware-${++nextMiddlewareId}`;
+      const middlewares = executionMiddlewares.get(toolName) ?? new Map();
+      middlewares.set(id, middleware);
+      executionMiddlewares.set(toolName, middlewares);
+      return id;
+    },
+    unregisterExecutionMiddleware(id: string): boolean {
+      for (const [toolName, middlewares] of executionMiddlewares) {
+        if (!middlewares.delete(id)) {
+          continue;
+        }
+        if (middlewares.size === 0) {
+          executionMiddlewares.delete(toolName);
+        }
+        return true;
+      }
+      return false;
+    },
+    async executeWithMiddleware<T>(
+      toolName: string,
+      context: ToolExecutionContext,
+      terminal: () => Promise<T>,
+    ): Promise<T> {
+      const middlewares = [...(executionMiddlewares.get(toolName)?.values() ?? [])];
+      let lastIndex = -1;
+
+      const dispatch = async (index: number): Promise<T> => {
+        if (index <= lastIndex) {
+          throw new Error(`工具 ${toolName} 的执行中间件重复调用 next()`);
+        }
+        lastIndex = index;
+
+        const middleware = middlewares[index];
+        if (!middleware) {
+          return terminal();
+        }
+        return middleware(context, () => dispatch(index + 1)) as Promise<T>;
+      };
+
+      return dispatch(0);
+    },
   };
 
   (globalThis as GlobalWithToolDisplayApi)[TOOL_DISPLAY_API_KEY] = api;
   drainPendingToolDisplayDecorations(api);
+  drainPendingToolExecutionMiddlewares(api);
   return api;
 }
 
@@ -1592,6 +1694,17 @@ export function registerToolDisplayOverrides(
   const bootstrapTools = getBuiltInTools(process.cwd());
   const builtInPromptMetadata = createLazyPromptMetadata(bootstrapTools);
   const clonedParameters = createLazyClonedParameters(bootstrapTools);
+  const bashParameters = {
+    ...toRecord(clonedParameters.bash),
+    properties: {
+      ...toRecord(toRecord(clonedParameters.bash).properties),
+      prompt: {
+        type: "string",
+        description:
+          "Bash 输出总结要求。当输出可能很长或长度不确定，且只需要结论、错误或关键项时应传入，以节省上下文 token；短且确定或需要完整原文时不要传。",
+      },
+    },
+  };
   const writeExecutionMetaByToolCallId = new Map<string, WriteExecutionMeta>();
   const registeredBuiltInToolOverrides = new Set<BuiltInToolOverrideName>();
 
@@ -1632,19 +1745,41 @@ export function registerToolDisplayOverrides(
     registeredBuiltInToolOverrides.add(toolName);
   };
 
+  const executeBuiltin = (
+    toolName: keyof BuiltInTools,
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal: unknown,
+    onUpdate: unknown,
+    ctx: { cwd: string },
+  ): Promise<unknown> =>
+    toolDisplayApi.executeWithMiddleware(
+      toolName,
+      {
+        toolName,
+        toolCallId,
+        params,
+        signal: signal as AbortSignal | undefined,
+        onUpdate,
+        ctx: ctx as ExtensionContext,
+      },
+      () =>
+        getBuiltInTools(ctx.cwd)[toolName].execute(
+          toolCallId,
+          params as never,
+          signal as never,
+          onUpdate as never,
+        ),
+    );
+
   function createBuiltinToolBase(toolName: keyof BuiltInTools) {
     return {
       description: bootstrapTools[toolName].description,
       ...builtInPromptMetadata[toolName],
       parameters: clonedParameters[toolName],
       prepareArguments: getToolPrepareArguments(bootstrapTools[toolName]),
-      async execute(toolCallId: string, params: Record<string, unknown>, signal: unknown, onUpdate: unknown, ctx: { cwd: string }) {
-        return getBuiltInTools(ctx.cwd)[toolName].execute(
-          toolCallId,
-          params as never,
-          signal as never,
-          onUpdate as never,
-        );
+      async execute(toolCallId: string, params: Record<string, unknown>, signal: unknown, onUpdate: unknown, ctx: ExtensionContext) {
+        return executeBuiltin(toolName, toolCallId, params, signal, onUpdate, ctx);
       },
     };
   }
@@ -1736,12 +1871,7 @@ export function registerToolDisplayOverrides(
     renderShell: "default",
     prepareArguments: getToolPrepareArguments(bootstrapTools.edit),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      return getBuiltInTools(ctx.cwd).edit.execute(
-        toolCallId,
-        params as never,
-        signal,
-        onUpdate as never,
-      );
+      return executeBuiltin("edit", toolCallId, params, signal, onUpdate, ctx);
     },
     renderCall(args, theme, context) {
       return renderEditDisplayCall(args, theme, context, {}, getConfig);
@@ -1767,12 +1897,7 @@ export function registerToolDisplayOverrides(
         previousContent: previous.content,
       });
 
-      return getBuiltInTools(ctx.cwd).write.execute(
-        toolCallId,
-        params as never,
-        signal,
-        onUpdate as never,
-      );
+      return executeBuiltin("write", toolCallId, params, signal, onUpdate, ctx);
     },
     renderCall(args, theme, context) {
       const content = getToolContentArg(args);
@@ -1833,6 +1958,16 @@ export function registerToolDisplayOverrides(
       name: "bash",
     label: "bash",
     ...createBuiltinToolBase("bash"),
+    parameters: bashParameters,
+    description:
+      "执行 bash 命令并返回 stdout/stderr。对于可能产生长输出或长度不确定的命令，如果只需要结论、错误或关键项，请传入 prompt，让执行中间件总结输出并节省上下文 token；只有需要完整原文时才省略 prompt。",
+    promptSnippet: "执行 bash 命令并按需处理长输出",
+    promptGuidelines: [
+      "核心规则：当输出可能很长或长度不确定，且任务不需要逐字读取全部输出时，应传入 prompt；不要因为无法预估长度而省略它，以免完整输出消耗上下文 token。",
+      "适合使用：测试、构建、CI、日志、git diff、find、grep、依赖分析等可能产生大量或不确定输出的命令。",
+      "prompt 应写明要保留的内容，例如：只提取失败项、错误、警告、关键数字、最终状态和后续动作，限制为三条。",
+      "短且确定的输出，或需要逐字读取/复制完整原文时，不传 prompt；未传入时返回原始输出。",
+    ],
     renderCall(args, theme, context) {
       return renderBashCall(args, theme, context as never);
     },

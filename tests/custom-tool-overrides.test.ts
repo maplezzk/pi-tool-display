@@ -131,6 +131,35 @@ function renderToolRawResult(
 	);
 }
 
+test("bash summary renders prompt and summary from details", () => {
+	const { api, registeredTools } = createExtensionApiStub();
+	registerToolDisplayOverrides(api, () => ({
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		bashOutputMode: "summary",
+	}));
+
+	const bash = registeredTools.find((tool) => tool.name === "bash");
+	assert.ok(bash);
+
+	const callRendered = renderToText(bash.renderCall?.(
+		{ command: "printf deploy", prompt: "提取错误和最终状态" },
+		createTheme(),
+		{ executionStarted: false, isPartial: false },
+	));
+	assert.match(callRendered, /📝 总结要求：/);
+	assert.match(callRendered, /提取错误和最终状态/);
+
+	const resultRendered = renderToolRawResult(bash, {
+		content: [{ type: "text", text: "发现 1 个错误，命令失败。" }],
+		details: {
+			summaryText: "发现 1 个错误，命令失败。",
+		},
+	});
+	assert.match(resultRendered, /📌 总结结果：/);
+	assert.match(resultRendered, /发现 1 个错误，命令失败。/);
+	assert.doesNotMatch(resultRendered, /提取错误和最终状态/);
+});
+
 test("normalizeToolDisplayConfig defaults customToolOverrides to an empty opt-in map", () => {
 	const config = normalizeToolDisplayConfig({}) as ToolDisplayConfigWithCustomOverrides;
 

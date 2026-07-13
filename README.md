@@ -106,6 +106,19 @@ import { decorateToolForDisplay, decorateMcpToolForDisplay } from "pi-tool-displ
 
 `decorateToolForDisplay(tool, adapter)` applies the runtime decoration immediately when `pi-tool-display` is loaded, or queues the decoration until the API becomes available. Use adapter options such as `kind: "read" | "edit" | "mcp" | "generic"` to select the renderer family; `decorateMcpToolForDisplay(tool)` is the shortcut for MCP-style tools.
 
+本地 fork 另外提供执行中间件 API，允许其他扩展在不重新注册工具的情况下处理工具执行结果：
+
+```ts
+import { registerToolExecutionMiddleware } from "pi-tool-display/tool-display-api-consumer";
+
+registerToolExecutionMiddleware("bash", async (context, next) => {
+  const result = await next();
+  return result;
+});
+```
+
+中间件支持在 `pi-tool-display` 加载前注册，会在 API 就绪后自动接入。
+
 ## Presets
 
 | Preset | Read Output | Search Output | MCP Output | Bash Output | Preview Lines | Bash Lines |

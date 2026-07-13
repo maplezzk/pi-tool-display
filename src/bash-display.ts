@@ -8,6 +8,7 @@ const BASH_SPINNER_TOOL_CALL_ID_KEY = "__piToolDisplayBashSpinnerToolCallId";
 
 interface BashCallArgs {
 	command?: string;
+	prompt?: string;
 	commandPrefix?: string;
 	shellPath?: string;
 	timeout?: number;
@@ -157,8 +158,12 @@ function buildBashCallText(
 		spinnerFrame && elapsedMs !== undefined
 			? theme.fg("muted", ` · ${formatElapsed(elapsedMs)}`)
 			: "";
+	const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+	const promptSuffix = prompt
+		? `\n${theme.fg("accent", "📝 总结要求：")}\n${prompt}`
+		: "";
 
-	return `${spinnerPrefix}${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("accent", commandDisplay)}${shellSuffix}${timeoutSuffix}${elapsedSuffix}`;
+	return `${spinnerPrefix}${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("accent", commandDisplay)}${shellSuffix}${timeoutSuffix}${elapsedSuffix}${promptSuffix}`;
 }
 
 export function renderBashCall(

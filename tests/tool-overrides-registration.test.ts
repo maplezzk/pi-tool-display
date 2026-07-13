@@ -116,7 +116,11 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 		const registeredTool = byName.get(name);
 		const builtInMetadata = builtInTool as unknown as RegisteredToolLike;
 		assert.ok(registeredTool, `expected '${name}' to be registered`);
-		assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
+		if (name === "bash") {
+			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并按需处理长输出");
+		} else {
+			assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
+		}
 	}
 
 	assert.deepEqual(byName.get("read")?.promptGuidelines, (builtInTools.read as unknown as RegisteredToolLike).promptGuidelines);
@@ -125,7 +129,12 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("grep")?.promptGuidelines, undefined);
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
-	assert.equal(byName.get("bash")?.promptGuidelines, undefined);
+	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
+		"核心规则：当输出可能很长或长度不确定，且任务不需要逐字读取全部输出时，应传入 prompt；不要因为无法预估长度而省略它，以免完整输出消耗上下文 token。",
+		"适合使用：测试、构建、CI、日志、git diff、find、grep、依赖分析等可能产生大量或不确定输出的命令。",
+		"prompt 应写明要保留的内容，例如：只提取失败项、错误、警告、关键数字、最终状态和后续动作，限制为三条。",
+		"短且确定的输出，或需要逐字读取/复制完整原文时，不传 prompt；未传入时返回原始输出。",
+	]);
 });
 
 test("registerToolDisplayOverrides registers built-in display renderers during extension load for pre-bind history rendering", () => {
@@ -168,7 +177,22 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 			builtInTool.parameters,
 			`expected '${name}' to use a cloned parameter object`,
 		);
-		assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
+		if (name === "bash") {
+			const expectedBashParameters = {
+				...(builtInTool.parameters as unknown as Record<string, unknown>),
+				properties: {
+					...((builtInTool.parameters as unknown as Record<string, unknown>).properties as Record<string, unknown>),
+					prompt: {
+						type: "string",
+						description:
+							"Bash 输出总结要求。当输出可能很长或长度不确定，且只需要结论、错误或关键项时应传入，以节省上下文 token；短且确定或需要完整原文时不要传。",
+					},
+				},
+			};
+			assert.deepEqual(registeredTool.parameters, expectedBashParameters);
+		} else {
+			assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
+		}
 	}
 });
 
