@@ -1694,16 +1694,23 @@ export function registerToolDisplayOverrides(
   const bootstrapTools = getBuiltInTools(process.cwd());
   const builtInPromptMetadata = createLazyPromptMetadata(bootstrapTools);
   const clonedParameters = createLazyClonedParameters(bootstrapTools);
+  const clonedBashParameters = toRecord(clonedParameters.bash);
   const bashParameters = {
-    ...toRecord(clonedParameters.bash),
+    ...clonedBashParameters,
     properties: {
-      ...toRecord(toRecord(clonedParameters.bash).properties),
+      ...toRecord(clonedBashParameters.properties),
       prompt: {
         type: "string",
         description:
-          "Bash 输出总结要求。当输出可能很长或长度不确定，且只需要结论、错误或关键项时应传入，以节省上下文 token；短且确定或需要完整原文时不要传。",
+          "必填的 Bash 输出处理要求。即使输出长度不确定也必须传入；工具会在输出达到配置阈值时自动总结，短输出则原样返回。",
       },
     },
+    required: Array.from(new Set([
+      ...(Array.isArray(clonedBashParameters.required)
+        ? clonedBashParameters.required.filter((value): value is string => typeof value === "string")
+        : []),
+      "prompt",
+    ])),
   };
   const writeExecutionMetaByToolCallId = new Map<string, WriteExecutionMeta>();
   const registeredBuiltInToolOverrides = new Set<BuiltInToolOverrideName>();
@@ -1960,13 +1967,13 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("bash"),
     parameters: bashParameters,
     description:
-      "执行 bash 命令并返回 stdout/stderr。对于可能产生长输出或长度不确定的命令，如果只需要结论、错误或关键项，请传入 prompt，让执行中间件总结输出并节省上下文 token；只有需要完整原文时才省略 prompt。",
+      "执行 bash 命令并返回 stdout/stderr。prompt 必填，用于说明输出处理要求；工具会根据输出长度自动决定是否调用总结模型，达到阈值时总结以节省上下文 token，短输出则原样返回。",
     promptSnippet: "执行 bash 命令并按需处理长输出",
     promptGuidelines: [
-      "核心规则：当输出可能很长或长度不确定，且任务不需要逐字读取全部输出时，应传入 prompt；不要因为无法预估长度而省略它，以免完整输出消耗上下文 token。",
-      "适合使用：测试、构建、CI、日志、git diff、find、grep、依赖分析等可能产生大量或不确定输出的命令。",
-      "prompt 应写明要保留的内容，例如：只提取失败项、错误、警告、关键数字、最终状态和后续动作，限制为三条。",
-      "短且确定的输出，或需要逐字读取/复制完整原文时，不传 prompt；未传入时返回原始输出。",
+      "prompt 是必填参数；即使你不确定输出长度，也必须传入简洁的输出处理要求。工具会自行判断是否达到总结阈值。",
+      "适合的要求：只提取失败项、错误、警告、关键数字、最终状态和后续动作，例如限制为三条。",
+      "测试、构建、CI、日志、git diff、find、grep、依赖分析等命令，统一传入 prompt；短输出会由工具自动原样返回，不会浪费总结调用。",
+      "只有需要完整原文并且不希望工具处理时，才在 prompt 中明确要求保留完整输出。",
     ],
     renderCall(args, theme, context) {
       return renderBashCall(args, theme, context as never);
