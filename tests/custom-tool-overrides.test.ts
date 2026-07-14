@@ -146,8 +146,8 @@ test("bash summary renders prompt and summary from details", () => {
 		createTheme(),
 		{ executionStarted: false, isPartial: false },
 	));
-	assert.match(callRendered, /📝 总结要求：/);
-	assert.match(callRendered, /提取错误和最终状态/);
+	assert.match(callRendered, /📝 总结要求： 提取错误和最终状态/);
+	assert.doesNotMatch(callRendered, /总结要求：\n/);
 
 	const resultRendered = renderToolRawResult(bash, {
 		content: [{ type: "text", text: "表格共包含 3 个 Sheet。" }],

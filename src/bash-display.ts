@@ -160,7 +160,7 @@ function buildBashCallText(
 			: "";
 	const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
 	const promptSuffix = prompt
-		? `\n${theme.fg("accent", "📝 总结要求：")}\n${prompt}`
+		? `\n${theme.fg("accent", "📝 总结要求：")} ${prompt}`
 		: "";
 
 	return `${spinnerPrefix}${theme.fg("toolTitle", theme.bold("$"))} ${theme.fg("accent", commandDisplay)}${shellSuffix}${timeoutSuffix}${elapsedSuffix}${promptSuffix}`;
