@@ -202,7 +202,7 @@ test("renderBashCall shows spinner when executionStarted and isPartial are true"
 	}
 });
 
-test("renderBashCall spinner animates frame index over time via setInterval", async () => {
+test("renderBashCall animates frames without forcing a TUI redraw", async () => {
 	const state: Record<string, unknown> = {};
 	let invalidateCount = 0;
 	const { text, stop } = createSpinningBashCall(
@@ -220,7 +220,7 @@ test("renderBashCall spinner animates frame index over time via setInterval", as
 		const frame1 = renderedText(text);
 		assert.notEqual(frame1, frame0, "spinner frame should advance");
 		assert.match(frame1, /^⠙/);
-		assert.ok(invalidateCount > 0, "invalidate should be called during animation");
+		assert.equal(invalidateCount, 0, "spinner animation must not force a full TUI redraw");
 	} finally {
 		stop();
 	}

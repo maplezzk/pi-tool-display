@@ -196,7 +196,8 @@ export function renderBashCall(
 						Date.now() - (spinnerState.startedAt ?? Date.now()),
 					),
 				);
-				context.invalidate?.();
+				// 不主动 invalidate：Bash 总结模型仍在执行时，工具调用会保持 partial。
+				// 每 200ms 强制重绘整个 TUI 会造成 Bash 执行期间闪烁；后续自然重绘时再显示最新帧。
 			}, BASH_SPINNER_INTERVAL_MS);
 			spinnerState.timer = timer;
 			registerTimer(timer);
