@@ -983,13 +983,13 @@ function formatBashSummaryBody(summaryText: string, theme: RenderTheme): string 
   return lines
     .map((line) => {
       const normalized = line
-        .replace(/^(\\s*)#{1,6}\\s+/, "$1")
-        .replace(/^(\\s*)[-*]\\s+/, "$1• ");
+        .replace(/^(\s*)#{1,6}\s+/, "$1")
+        .replace(/^(\s*)[-*]\s+/, "$1• ");
       return normalized
-        .replace(/\\*\\*([^*\\n]+)\\*\\*/g, (_match, value: string) => theme.bold(value))
-        .replace(/`([^`\\n]+)`/g, (_match, value: string) => theme.fg("accent", value));
+        .replace(/\*\*([^*\n]+)\*\*/g, (_match, value: string) => theme.bold(value))
+        .replace(/`([^`\n]+)`/g, (_match, value: string) => theme.fg("accent", value));
     })
-    .join("\\n");
+    .join("\n");
 }
 
 function formatBashSummary(
@@ -1006,8 +1006,8 @@ function formatBashSummary(
   const summaryDetails = details as BashSummaryDetails | undefined;
 
   if (summaryDetails?.summaryText) {
-    summary += `\\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}`;
-    summary += `\\n${formatBashSummaryBody(summaryDetails.summaryText, theme)}`;
+    summary += `\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}`;
+    summary += `\n${formatBashSummaryBody(summaryDetails.summaryText, theme)}`;
   }
 
   return summary;
