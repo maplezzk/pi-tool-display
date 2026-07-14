@@ -523,7 +523,7 @@ test("bash call spinner appears only while execution is active", async () => {
 	const animatedFrame = normalizeRenderedText(running.component);
 	assert.notEqual(animatedFrame, running.output);
 	assert.match(animatedFrame, /^⠙ \$ npm test · 0s$/);
-	assert.ok(invalidateCount > 0);
+	assert.equal(invalidateCount, 0);
 
 	const complete = renderToolCall(
 		bashTool,

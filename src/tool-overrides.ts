@@ -946,7 +946,7 @@ function formatReadSummary(
     "warning",
     showTruncationHints ? truncationHint(details) : "",
   );
-  return summary;
+  return appendOutputSummary(summary, details, theme);
 }
 
 function formatSearchSummary(
@@ -966,15 +966,15 @@ function formatSearchSummary(
     "warning",
     showTruncationHints ? truncationHint(details) : "",
   );
-  return summary;
+  return appendOutputSummary(summary, details, theme);
 }
 
-type BashSummaryDetails = BashToolDetails & {
+type OutputSummaryDetails = {
   summaryText?: string;
   summaryFilePath?: string;
 };
 
-function formatBashSummaryBody(summaryText: string, theme: RenderTheme): string {
+function formatOutputSummaryBody(summaryText: string, theme: RenderTheme): string {
   const lines = compactOutputLines(
     splitLines(sanitizeAnsiForThemedOutput(summaryText)),
     { expanded: false, maxCollapsedConsecutiveEmptyLines: 0 },
@@ -992,6 +992,19 @@ function formatBashSummaryBody(summaryText: string, theme: RenderTheme): string 
     .join("\n");
 }
 
+function appendOutputSummary(
+  base: string,
+  details: unknown,
+  theme: RenderTheme,
+): string {
+  const summaryText = getStringField(details, "summaryText")?.trim();
+  if (!summaryText) {
+    return base;
+  }
+
+  return `${base}\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
+}
+
 function formatBashSummary(
   lines: string[],
   details: BashToolDetails | undefined,
@@ -999,18 +1012,11 @@ function formatBashSummary(
   _showTruncationHints: boolean,
 ): string {
   const lineCount = lines.length;
-  let summary = theme.fg(
+  const summary = theme.fg(
     "muted",
     `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
   );
-  const summaryDetails = details as BashSummaryDetails | undefined;
-
-  if (summaryDetails?.summaryText) {
-    summary += `\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}`;
-    summary += `\n${formatBashSummaryBody(summaryDetails.summaryText, theme)}`;
-  }
-
-  return summary;
+  return appendOutputSummary(summary, details, theme);
 }
 
 function formatBashTruncationHints(
@@ -1330,17 +1336,29 @@ function getSearchScope(args: Record<string, unknown>): string {
   return shortenPath((args.path as string) || ".");
 }
 
+function getOutputPromptArg(args: unknown): string | undefined {
+  const prompt = getStringField(args, "outputPrompt")?.trim();
+  return prompt || undefined;
+}
+
+function appendOutputPrompt(
+  line: string,
+  args: unknown,
+  theme: RenderTheme,
+): string {
+  const prompt = getOutputPromptArg(args);
+  return prompt
+    ? `${line}\n${theme.fg("accent", `📝 输出要求： ${prompt}`)}`
+    : line;
+}
+
 function formatSearchCallLine(
   toolName: string,
   accent: string,
   mutedSuffix: string,
   theme: RenderTheme,
-): Text {
-  return new Text(
-    `${theme.fg("toolTitle", theme.bold(toolName))} ${theme.fg("accent", accent)}${theme.fg("muted", mutedSuffix)}`,
-    0,
-    0,
-  );
+): string {
+  return `${theme.fg("toolTitle", theme.bold(toolName))} ${theme.fg("accent", accent)}${theme.fg("muted", mutedSuffix)}`;
 }
 
 function renderCustomToolResult(
@@ -1399,7 +1417,7 @@ function renderReadDisplayCall(
     suffix = to ? `:${from}-${to}` : `:${from}`;
   }
   const line = `${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", path || "...")}${theme.fg("warning", suffix)}`;
-  return textResult(line);
+  return textResult(appendOutputPrompt(line, args, theme));
 }
 
 function renderReadDisplayResult(
@@ -1772,6 +1790,42 @@ export function registerToolDisplayOverrides(
     registeredBuiltInToolOverrides.add(toolName);
   };
 
+  const outputPromptToolNames = new Set<keyof BuiltInTools>(["read", "grep", "find"]);
+
+  function addOutputPromptParameter(
+    toolName: keyof BuiltInTools,
+    parameters: unknown,
+  ): unknown {
+    if (!outputPromptToolNames.has(toolName)) {
+      return parameters;
+    }
+
+    const parameterRecord = toRecord(parameters);
+    return {
+      ...parameterRecord,
+      properties: {
+        ...toRecord(parameterRecord.properties),
+        outputPrompt: {
+          type: "string",
+          description:
+            "可选的输出处理要求。需要总结结果时填写；需要完整原文时填写 RAW（大小写不敏感）。不会传给底层工具执行。",
+        },
+      },
+    };
+  }
+
+  function stripOutputProcessingParams(
+    toolName: keyof BuiltInTools,
+    params: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const executionParams = { ...params };
+    delete executionParams.outputPrompt;
+    if (toolName === "bash") {
+      delete executionParams.prompt;
+    }
+    return executionParams;
+  }
+
   const executeBuiltin = (
     toolName: keyof BuiltInTools,
     toolCallId: string,
@@ -1779,8 +1833,9 @@ export function registerToolDisplayOverrides(
     signal: unknown,
     onUpdate: unknown,
     ctx: { cwd: string },
-  ): Promise<unknown> =>
-    toolDisplayApi.executeWithMiddleware(
+  ): Promise<unknown> => {
+    const executionParams = stripOutputProcessingParams(toolName, params);
+    return toolDisplayApi.executeWithMiddleware(
       toolName,
       {
         toolName,
@@ -1793,17 +1848,18 @@ export function registerToolDisplayOverrides(
       () =>
         getBuiltInTools(ctx.cwd)[toolName].execute(
           toolCallId,
-          params as never,
+          executionParams as never,
           signal as never,
           onUpdate as never,
         ),
     );
+  };
 
   function createBuiltinToolBase(toolName: keyof BuiltInTools) {
     return {
       description: bootstrapTools[toolName].description,
       ...builtInPromptMetadata[toolName],
-      parameters: clonedParameters[toolName],
+      parameters: addOutputPromptParameter(toolName, clonedParameters[toolName]),
       prepareArguments: getToolPrepareArguments(bootstrapTools[toolName]),
       async execute(toolCallId: string, params: Record<string, unknown>, signal: unknown, onUpdate: unknown, ctx: ExtensionContext) {
         return executeBuiltin(toolName, toolCallId, params, signal, onUpdate, ctx);
@@ -1850,7 +1906,11 @@ export function registerToolDisplayOverrides(
       const globSuffix = args.glob ? ` (${args.glob})` : "";
       const limitSuffix =
         args.limit !== undefined ? ` limit ${args.limit}` : "";
-      return formatSearchCallLine("grep", `/${args.pattern}/`, ` in ${scope}${globSuffix}${limitSuffix}`, theme);
+      return textResult(appendOutputPrompt(
+        formatSearchCallLine("grep", `/${args.pattern}/`, ` in ${scope}${globSuffix}${limitSuffix}`, theme),
+        args,
+        theme,
+      ));
     },
     renderResult(result, options, theme) {
       return renderSearchToolResult(result, options, theme, "match", "matches");
@@ -1865,7 +1925,11 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("find"),
     renderCall(args, theme) {
       const { scope, limitSuffix } = buildSearchCallSuffix(args);
-      return formatSearchCallLine("find", args.pattern as string, ` in ${scope}${limitSuffix}`, theme);
+      return textResult(appendOutputPrompt(
+        formatSearchCallLine("find", args.pattern as string, ` in ${scope}${limitSuffix}`, theme),
+        args,
+        theme,
+      ));
     },
     renderResult(result, options, theme) {
       return renderSearchToolResult(result, options, theme, "result");
@@ -1880,7 +1944,11 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("ls"),
     renderCall(args, theme) {
       const { scope, limitSuffix } = buildSearchCallSuffix(args);
-      return formatSearchCallLine("ls", scope, limitSuffix, theme);
+      return textResult(appendOutputPrompt(
+        formatSearchCallLine("ls", scope, limitSuffix, theme),
+        args,
+        theme,
+      ));
     },
     renderResult(result, options, theme) {
       return renderSearchToolResult(result, options, theme, "entry", "entries");
