@@ -150,13 +150,16 @@ test("bash summary renders prompt and summary from details", () => {
 	assert.match(callRendered, /提取错误和最终状态/);
 
 	const resultRendered = renderToolRawResult(bash, {
-		content: [{ type: "text", text: "发现 1 个错误，命令失败。" }],
+		content: [{ type: "text", text: "表格共包含 3 个 Sheet。" }],
 		details: {
-			summaryText: "发现 1 个错误，命令失败。",
+			summaryText: "表格共包含 3 个 Sheet。\n\n- **肇庆仓包含调拨**\n- `sheet_id` 可见",
 		},
 	});
-	assert.match(resultRendered, /📌 总结结果：/);
-	assert.match(resultRendered, /发现 1 个错误，命令失败。/);
+	assert.match(resultRendered, /✦ 输出摘要/);
+	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
+	assert.match(resultRendered, /• 肇庆仓包含调拨/);
+	assert.match(resultRendered, /sheet_id/);
+	assert.doesNotMatch(resultRendered, /\*\*/);
 	assert.doesNotMatch(resultRendered, /提取错误和最终状态/);
 });
 
