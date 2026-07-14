@@ -1702,7 +1702,7 @@ export function registerToolDisplayOverrides(
       prompt: {
         type: "string",
         description:
-          "必填的 Bash 输出处理要求。即使输出长度不确定也必须传入；工具会在输出达到配置阈值时自动总结，短输出则原样返回。",
+          "必填的 Bash 输出处理要求。即使输出长度不确定也必须传入；工具会在输出达到配置阈值时自动总结，短输出则原样返回。需要完整原始输出时，prompt 必须严格传入 RAW（大小写不敏感），不要用自然语言替代。",
       },
     },
     required: Array.from(new Set([
@@ -1967,13 +1967,13 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("bash"),
     parameters: bashParameters,
     description:
-      "执行 bash 命令并返回 stdout/stderr。prompt 必填，用于说明输出处理要求；工具会根据输出长度自动决定是否调用总结模型，达到阈值时总结以节省上下文 token，短输出则原样返回。",
+      "执行 bash 命令并返回 stdout/stderr。prompt 必填，用于说明输出处理要求；工具会根据输出长度自动决定是否调用总结模型，达到阈值时总结以节省上下文 token，短输出则原样返回。需要完整原始输出时，prompt 必须严格传入 RAW（大小写不敏感）。",
     promptSnippet: "执行 bash 命令并按需处理长输出",
     promptGuidelines: [
       "prompt 是必填参数；即使你不确定输出长度，也必须传入简洁的输出处理要求。工具会自行判断是否达到总结阈值。",
       "适合的要求：只提取失败项、错误、警告、关键数字、最终状态和后续动作，例如限制为三条。",
       "测试、构建、CI、日志、git diff、find、grep、依赖分析等命令，统一传入 prompt；短输出会由工具自动原样返回，不会浪费总结调用。",
-      "只有需要完整原文并且不希望工具处理时，才在 prompt 中明确要求保留完整输出。",
+      "只有需要完整原文并且不希望工具处理时，prompt 才传入 RAW；不要传“保留完整输出”等自然语言，因为只有 RAW 才会关闭总结。", 
     ],
     renderCall(args, theme, context) {
       return renderBashCall(args, theme, context as never);
