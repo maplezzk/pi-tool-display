@@ -191,11 +191,14 @@ test("bash raw diagnostics render original character count and decision", () => 
 			summaryTriggerMinChars: 200,
 			summaryTriggerMaxChars: null,
 			summaryResultMaxChars: 100000,
+			missedCompressionRatio: 2,
 			outputSummaryStatus: "full-output",
+			outputSummaryAdvice: "本次输出显式使用 RAW，按要求保留原文。",
 		},
 	});
 
-	assert.match(rendered, /✦ 输出审计 · 原文·RAW · 字符 2000 · 阈值≥200 · 工具 0\.0s/);
+	assert.match(rendered, /✦ 输出审计 · 原文·RAW · 字符 2000 · 阈值≥200 · 长输出≥2\.0x · 工具 0\.0s/);
+	assert.match(rendered, /⚠ 输出处理提醒：本次输出显式使用 RAW/);
 	assert.match(rendered, /✦ 输出审计/);
 });
 

@@ -1037,7 +1037,10 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   if (summaryTriggerMinChars !== undefined) {
     parts.push(`阈值≥${Math.round(summaryTriggerMinChars)}`);
   }
-  if (record.outputSummaryStatus === "not-requested" && missedCompressionRatio !== undefined) {
+  if (
+    (record.outputSummaryStatus === "not-requested" || record.outputSummaryStatus === "full-output") &&
+    missedCompressionRatio !== undefined
+  ) {
     parts.push(`长输出≥${missedCompressionRatio.toFixed(1)}x`);
   }
   if (toolExecutionMs !== undefined) {
