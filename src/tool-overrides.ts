@@ -1016,14 +1016,14 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const lines: string[] = [];
 
   if (toolExecutionMs !== undefined || summaryDurationMs !== undefined) {
-    const timing: string[] = [];
-    if (toolExecutionMs !== undefined) timing.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
-    if (summaryDurationMs !== undefined) {
-      timing.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
-    } else if (record.outputSummaryStatus && record.outputSummaryStatus !== "summarized") {
-      timing.push("未压缩");
+    if (toolExecutionMs !== undefined) {
+      lines.push(theme.fg("muted", `工具耗时：${formatDurationSeconds(toolExecutionMs)}`));
     }
-    lines.push(theme.fg("muted", `⏱ ${timing.join(" · ")}`));
+    if (summaryDurationMs !== undefined) {
+      lines.push(theme.fg("muted", `压缩耗时：${formatDurationSeconds(summaryDurationMs)}`));
+    } else if (record.outputSummaryStatus && record.outputSummaryStatus !== "summarized") {
+      lines.push(theme.fg("muted", "压缩耗时：未压缩"));
+    }
   }
 
   const statusLabels: Record<string, string> = {
@@ -1040,7 +1040,7 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     ? statusLabels[record.outputSummaryStatus] ?? record.outputSummaryStatus
     : undefined;
   if (statusLabel) {
-    lines.push(theme.fg("muted", `↳ 输出处理：${statusLabel}`));
+    lines.push(theme.fg("muted", `处理状态：${statusLabel}`));
   }
 
   if (summaryTriggerMinChars !== undefined) {
@@ -1052,7 +1052,7 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
       : `${Math.round(summaryResultMaxChars)} 字符`;
     lines.push(theme.fg(
       "muted",
-      `↳ 总结触发：≥ ${Math.round(summaryTriggerMinChars)} 字符 · 输入上限：${triggerMax} · 总结结果上限：${resultMax}`,
+      `总结触发：≥ ${Math.round(summaryTriggerMinChars)} 字符 · 输入上限：${triggerMax} · 总结结果上限：${resultMax}`,
     ));
   }
 
@@ -1063,12 +1063,12 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
       : "";
     lines.push(theme.fg(
       "muted",
-      `↳ 字符 ${Math.round(originalOutputChars)} → ${Math.round(summaryChars)}${ratio}${saved}`,
+      `字符 ${Math.round(originalOutputChars)} → ${Math.round(summaryChars)}${ratio}${saved}`,
     ));
   } else if (originalOutputChars !== undefined) {
     lines.push(theme.fg(
       "muted",
-      `↳ 原始字符：${Math.round(originalOutputChars)}`,
+      `原始字符：${Math.round(originalOutputChars)}`,
     ));
   }
 
@@ -1086,7 +1086,9 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     ));
   }
 
-  return lines.length > 0 ? `\n${lines.join("\n")}` : "";
+  return lines.length > 0
+    ? `\n${theme.fg("accent", theme.bold("✦ 输出审计"))}\n${lines.map((line) => `  ${line}`).join("\n")}`
+    : "";
 }
 
 function formatOutputSummaryBody(summaryText: string, theme: RenderTheme): string {

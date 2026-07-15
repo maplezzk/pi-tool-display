@@ -166,9 +166,11 @@ test("bash summary renders prompt and summary from details", () => {
 		},
 	});
 	assert.match(resultRendered, /✦ 输出摘要/);
-	assert.match(resultRendered, /↳ 输出处理：已压缩/);
-	assert.match(resultRendered, /⏱ 工具 0\.0s · 压缩 0\.0s/);
-	assert.match(resultRendered, /↳ 字符 1000 → 100 · 10\.00x · 节省 90\.0%/);
+	assert.match(resultRendered, /处理状态：已压缩/);
+	assert.match(resultRendered, /工具耗时：0\.0s/);
+	assert.match(resultRendered, /压缩耗时：0\.0s/);
+	assert.match(resultRendered, /字符 1000 → 100 · 10\.00x · 节省 90\.0%/);
+	assert.match(resultRendered, /✦ 输出审计/);
 	assert.match(resultRendered, /总结触发：≥ 200 字符 · 输入上限：无 · 总结结果上限：1000 字符/);
 	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
 	assert.match(resultRendered, /• 肇庆仓包含调拨/);
@@ -198,10 +200,12 @@ test("bash raw diagnostics render original character count and decision", () => 
 		},
 	});
 
-	assert.match(rendered, /↳ 输出处理：保留原文：要求完整结果/);
-	assert.match(rendered, /↳ 原始字符：2000/);
+	assert.match(rendered, /处理状态：保留原文：要求完整结果/);
+	assert.match(rendered, /原始字符：2000/);
 	assert.match(rendered, /总结触发：≥ 200 字符 · 输入上限：无 · 总结结果上限：100000 字符/);
-	assert.match(rendered, /⏱ 工具 0\.0s · 未压缩/);
+	assert.match(rendered, /工具耗时：0\.0s/);
+	assert.match(rendered, /压缩耗时：未压缩/);
+	assert.match(rendered, /✦ 输出审计/);
 });
 
 test("normalizeToolDisplayConfig defaults customToolOverrides to an empty opt-in map", () => {
