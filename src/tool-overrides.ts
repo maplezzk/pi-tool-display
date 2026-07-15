@@ -1740,15 +1740,12 @@ export function registerToolDisplayOverrides(
       prompt: {
         type: "string",
         description:
-          "必填的 Bash 输出处理要求。即使输出长度不确定也必须传入；工具会在输出达到配置阈值时自动总结，短输出则原样返回。需要完整原始输出时，prompt 必须严格传入 RAW（大小写不敏感），不要用自然语言替代。",
+          "可选的 Bash 输出处理要求。默认不传，原样返回，不调用总结模型。只有明确需要总结、摘要、提取错误等，且能接受摘要丢失逐字细节时才填写；输出很长但需求不明确时也可能按需总结。需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或严格填写 RAW（大小写不敏感）。不会传给底层 bash 执行。",
       },
     },
-    required: Array.from(new Set([
-      ...(Array.isArray(clonedBashParameters.required)
-        ? clonedBashParameters.required.filter((value): value is string => typeof value === "string")
-        : []),
-      "prompt",
-    ])),
+    required: Array.isArray(clonedBashParameters.required)
+      ? clonedBashParameters.required.filter((value): value is string => typeof value === "string" && value !== "prompt")
+      : [],
   };
   const writeExecutionMetaByToolCallId = new Map<string, WriteExecutionMeta>();
   const registeredBuiltInToolOverrides = new Set<BuiltInToolOverrideName>();
@@ -1808,7 +1805,7 @@ export function registerToolDisplayOverrides(
         outputPrompt: {
           type: "string",
           description:
-            "可选的输出处理要求。需要总结结果时填写；需要完整原文时填写 RAW（大小写不敏感）。不会传给底层工具执行。",
+            "可选。默认不传，原样返回，不调用总结模型。仅在明确需要摘要、提取错误/警告等且输出较长时填写；需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或填写 RAW（大小写不敏感）。不会传给底层工具执行。",
         },
       },
     };
@@ -2055,13 +2052,13 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("bash"),
     parameters: bashParameters,
     description:
-      "执行 bash 命令并返回 stdout/stderr。prompt 必填，用于说明输出处理要求；工具会根据输出长度自动决定是否调用总结模型，达到阈值时总结以节省上下文 token，短输出则原样返回。需要完整原始输出时，prompt 必须严格传入 RAW（大小写不敏感）。",
-    promptSnippet: "执行 bash 命令并按需处理长输出",
+      "执行 bash 命令并返回 stdout/stderr。默认返回完整原始输出，不自动调用总结模型。只有输出较长且明确需要摘要、提取错误/警告等时才填写 prompt；需求不明确时工具会保守地原样返回。需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或严格填写 RAW（大小写不敏感）。",
+    promptSnippet: "执行 bash 命令并默认保留原文",
     promptGuidelines: [
-      "prompt 是必填参数；即使你不确定输出长度，也必须传入简洁的输出处理要求。工具会自行判断是否达到总结阈值。",
-      "适合的要求：只提取失败项、错误、警告、关键数字、最终状态和后续动作，例如限制为三条。",
-      "测试、构建、CI、日志、git diff、find、grep、依赖分析等命令，统一传入 prompt；短输出会由工具自动原样返回，不会浪费总结调用。",
-      "只有需要完整原文并且不希望工具处理时，prompt 才传入 RAW；不要传“保留完整输出”等自然语言，因为只有 RAW 才会关闭总结。", 
+      "prompt 是可选参数；默认不要传，普通命令结果应原样返回。不要为了满足格式而随意填写总结要求。",
+      "只有明确需要摘要、提取错误/警告、关键数字或最终状态，并且输出较长时才填写。总结可能丢失逐字细节。",
+      "需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写 prompt，或严格传入 RAW；不要用‘保留完整输出’等自然语言替代 RAW。",
+      "当需求不明确时，工具宁可返回原文；仅对明显超长且允许按需处理的输出考虑调用总结模型。",
     ],
     renderCall(args, theme, context) {
       return renderBashCall(args, theme, context as never);

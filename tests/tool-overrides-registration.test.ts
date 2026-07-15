@@ -117,7 +117,7 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 		const builtInMetadata = builtInTool as unknown as RegisteredToolLike;
 		assert.ok(registeredTool, `expected '${name}' to be registered`);
 		if (name === "bash") {
-			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并按需处理长输出");
+			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并默认保留原文");
 		} else {
 			assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
 		}
@@ -130,10 +130,10 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
 	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
-		"prompt 是必填参数；即使你不确定输出长度，也必须传入简洁的输出处理要求。工具会自行判断是否达到总结阈值。",
-		"适合的要求：只提取失败项、错误、警告、关键数字、最终状态和后续动作，例如限制为三条。",
-		"测试、构建、CI、日志、git diff、find、grep、依赖分析等命令，统一传入 prompt；短输出会由工具自动原样返回，不会浪费总结调用。",
-		"只有需要完整原文并且不希望工具处理时，才在 prompt 中明确要求保留完整输出。",
+		"prompt 是可选参数；默认不要传，普通命令结果应原样返回。不要为了满足格式而随意填写总结要求。",
+		"只有明确需要摘要、提取错误/警告、关键数字或最终状态，并且输出较长时才填写。总结可能丢失逐字细节。",
+		"需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写 prompt，或严格传入 RAW；不要用‘保留完整输出’等自然语言替代 RAW。",
+		"当需求不明确时，工具宁可返回原文；仅对明显超长且允许按需处理的输出考虑调用总结模型。",
 	]);
 });
 
@@ -185,19 +185,29 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 					prompt: {
 						type: "string",
 						description:
-							"必填的 Bash 输出处理要求。即使输出长度不确定也必须传入；工具会在输出达到配置阈值时自动总结，短输出则原样返回。",
+							"可选的 Bash 输出处理要求。默认不传，原样返回，不调用总结模型。只有明确需要总结、摘要、提取错误等，且能接受摘要丢失逐字细节时才填写；输出很长但需求不明确时也可能按需总结。需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或严格填写 RAW（大小写不敏感）。不会传给底层 bash 执行。",
 					},
 				},
-				required: Array.from(new Set([
-					...(Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
-						? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
-							(value): value is string => typeof value === "string",
-						)
-						: []),
-					"prompt",
-				])),
+				required: Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
+					? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
+						(value): value is string => typeof value === "string" && value !== "prompt",
+					)
+					: [],
 			};
 			assert.deepEqual(registeredTool.parameters, expectedBashParameters);
+		} else if (["read", "grep", "find"].includes(name)) {
+			const builtInParameters = builtInTool.parameters as unknown as Record<string, unknown>;
+			assert.deepEqual(registeredTool.parameters, {
+				...builtInParameters,
+				properties: {
+					...(builtInParameters.properties as Record<string, unknown>),
+					outputPrompt: {
+						type: "string",
+						description:
+							"可选。默认不传，原样返回，不调用总结模型。仅在明确需要摘要、提取错误/警告等且输出较长时填写；需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或填写 RAW（大小写不敏感）。不会传给底层工具执行。",
+					},
+				},
+			});
 		} else {
 			assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
 		}
