@@ -989,6 +989,10 @@ function getFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function formatDurationSeconds(milliseconds: number): string {
+  return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
 function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const record = toRecord(details) as OutputSummaryDetails;
   const toolExecutionMs = getFiniteNumber(record.toolExecutionMs);
@@ -1001,8 +1005,8 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
 
   if (toolExecutionMs !== undefined || summaryDurationMs !== undefined) {
     const timing: string[] = [];
-    if (toolExecutionMs !== undefined) timing.push(`工具 ${toolExecutionMs}ms`);
-    if (summaryDurationMs !== undefined) timing.push(`压缩 ${summaryDurationMs}ms`);
+    if (toolExecutionMs !== undefined) timing.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
+    if (summaryDurationMs !== undefined) timing.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
     lines.push(theme.fg("muted", `⏱ ${timing.join(" · ")}`));
   }
 

@@ -162,7 +162,7 @@ test("bash summary renders prompt and summary from details", () => {
 		},
 	});
 	assert.match(resultRendered, /✦ 输出摘要/);
-	assert.match(resultRendered, /⏱ 工具 32ms · 压缩 7ms/);
+	assert.match(resultRendered, /⏱ 工具 0\.0s · 压缩 0\.0s/);
 	assert.match(resultRendered, /↳ 字符 1000 → 100 · 10\.00x · 节省 90\.0%/);
 	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
 	assert.match(resultRendered, /• 肇庆仓包含调拨/);
