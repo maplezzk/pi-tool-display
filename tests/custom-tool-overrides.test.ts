@@ -153,9 +153,17 @@ test("bash summary renders prompt and summary from details", () => {
 		content: [{ type: "text", text: "表格共包含 3 个 Sheet。" }],
 		details: {
 			summaryText: "表格共包含 3 个 Sheet。\n\n- **肇庆仓包含调拨**\n- `sheet_id` 可见",
+			toolExecutionMs: 32,
+			summaryDurationMs: 7,
+			originalOutputChars: 1000,
+			summaryChars: 100,
+			compressionRatio: 10,
+			compressionSavedPercent: 90,
 		},
 	});
 	assert.match(resultRendered, /✦ 输出摘要/);
+	assert.match(resultRendered, /⏱ 工具 32ms · 压缩 7ms/);
+	assert.match(resultRendered, /↳ 字符 1000 → 100 · 10\.00x · 节省 90\.0%/);
 	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
 	assert.match(resultRendered, /• 肇庆仓包含调拨/);
 	assert.match(resultRendered, /sheet_id/);

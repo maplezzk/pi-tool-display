@@ -912,6 +912,7 @@ function appendPreviewHints(preview: string, ctx: PreviewHintContext): string {
   if (config.showTruncationHints && toRecord(toRecord(details).truncation).truncated) {
     preview += `\n${theme.fg("warning", "(truncated by backend limits)")}`;
   }
+  preview += formatOutputDiagnostics(details, theme);
   return appendRtkAndExpandedHints(preview, ctx);
 }
 
@@ -972,7 +973,62 @@ function formatSearchSummary(
 type OutputSummaryDetails = {
   summaryText?: string;
   summaryFilePath?: string;
+  toolExecutionMs?: number;
+  summaryDurationMs?: number;
+  outputSummaryIntent?: string;
+  outputSummaryStatus?: string;
+  outputSummaryAnomalies?: string[];
+  outputSummaryAdvice?: string;
+  originalOutputChars?: number;
+  summaryChars?: number;
+  compressionRatio?: number;
+  compressionSavedPercent?: number;
 };
+
+function getFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
+  const record = toRecord(details) as OutputSummaryDetails;
+  const toolExecutionMs = getFiniteNumber(record.toolExecutionMs);
+  const summaryDurationMs = getFiniteNumber(record.summaryDurationMs);
+  const originalOutputChars = getFiniteNumber(record.originalOutputChars);
+  const summaryChars = getFiniteNumber(record.summaryChars);
+  const compressionRatio = getFiniteNumber(record.compressionRatio);
+  const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
+  const lines: string[] = [];
+
+  if (toolExecutionMs !== undefined || summaryDurationMs !== undefined) {
+    const timing: string[] = [];
+    if (toolExecutionMs !== undefined) timing.push(`工具 ${toolExecutionMs}ms`);
+    if (summaryDurationMs !== undefined) timing.push(`压缩 ${summaryDurationMs}ms`);
+    lines.push(theme.fg("muted", `⏱ ${timing.join(" · ")}`));
+  }
+
+  if (originalOutputChars !== undefined && summaryChars !== undefined) {
+    const ratio = compressionRatio !== undefined ? ` · ${compressionRatio.toFixed(2)}x` : "";
+    const saved = compressionSavedPercent !== undefined
+      ? ` · 节省 ${compressionSavedPercent.toFixed(1)}%`
+      : "";
+    lines.push(theme.fg(
+      "muted",
+      `↳ 字符 ${Math.round(originalOutputChars)} → ${Math.round(summaryChars)}${ratio}${saved}`,
+    ));
+  }
+
+  const anomalies = Array.isArray(record.outputSummaryAnomalies)
+    ? record.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
+    : [];
+  if (anomalies.length > 0 || record.outputSummaryAdvice) {
+    lines.push(theme.fg(
+      "warning",
+      `⚠ 输出处理提醒：${record.outputSummaryAdvice ?? anomalies.join("、")}`,
+    ));
+  }
+
+  return lines.length > 0 ? `\n${lines.join("\n")}` : "";
+}
 
 function formatOutputSummaryBody(summaryText: string, theme: RenderTheme): string {
   const lines = compactOutputLines(
@@ -998,11 +1054,12 @@ function appendOutputSummary(
   theme: RenderTheme,
 ): string {
   const summaryText = getStringField(details, "summaryText")?.trim();
+  const diagnostics = formatOutputDiagnostics(details, theme);
   if (!summaryText) {
-    return base;
+    return `${base}${diagnostics}`;
   }
 
-  return `${base}\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
+  return `${base}${diagnostics}\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
 }
 
 function formatBashSummary(
@@ -1079,6 +1136,7 @@ function renderBashPreviewWithHints(
   if (config.showTruncationHints) {
     preview += formatBashTruncationHints(details, theme);
   }
+  preview += formatOutputDiagnostics(details, theme);
   if (options.expanded) {
     preview += formatExpandedPreviewCapHint(lines, config, theme);
   }
@@ -1139,6 +1197,7 @@ function renderBashErrorResult(
   if (config.showTruncationHints) {
     text += formatBashTruncationHints(details, theme);
   }
+  text += formatOutputDiagnostics(details, theme);
   if (options.expanded && lines.length > 0) {
     text += formatExpandedPreviewCapHint(lines, config, theme);
   }
@@ -2083,6 +2142,7 @@ export function registerToolDisplayOverrides(
         if (config.showTruncationHints) {
           text += formatBashTruncationHints(details, theme);
         }
+        text += formatOutputDiagnostics(details, theme);
         return textResult(text);
       }
 
@@ -2117,6 +2177,7 @@ export function registerToolDisplayOverrides(
         if (config.showTruncationHints) {
           hidden += formatBashTruncationHints(details, theme);
         }
+        hidden += formatOutputDiagnostics(details, theme);
         return textResult(hidden);
       }
 
@@ -2127,6 +2188,7 @@ export function registerToolDisplayOverrides(
       if (config.showTruncationHints) {
         text += formatBashTruncationHints(details, theme);
       }
+      text += formatOutputDiagnostics(details, theme);
       return textResult(text);
     },
     });
