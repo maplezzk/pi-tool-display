@@ -13,7 +13,11 @@ import {
 	createWriteTool,
 	type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { registerToolDisplayOverrides } from "../src/tool-overrides.ts";
+import {
+	BASH_OUTPUT_PROMPT_DESCRIPTION,
+	OUTPUT_PROMPT_DESCRIPTION,
+	registerToolDisplayOverrides,
+} from "../src/tool-overrides.ts";
 import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../src/types.ts";
 
 const TOOL_DISPLAY_PENDING_DECORATIONS_KEY = Symbol.for("pi-tool-display.pendingDecorations.v1");
@@ -130,10 +134,10 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
 	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
-		"prompt 是可选参数；默认不要传，普通命令结果应原样返回。不要为了满足格式而随意填写总结要求。",
-		"只有明确需要摘要、提取错误/警告、关键数字或最终状态，并且输出较长时才填写。总结可能丢失逐字细节。",
-		"需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写 prompt，或严格传入 RAW；不要用‘保留完整输出’等自然语言替代 RAW。",
-		"当需求不明确时，工具宁可返回原文；仅对明显超长且允许按需处理的输出考虑调用总结模型。",
+		"prompt 是可选参数；默认不要传，普通命令结果应原样返回。",
+		"只要传入非空且非 RAW 的 prompt，就表示要求调用总结模型；prompt 的具体内容决定总结保留哪些信息。",
+		"需要完整原文时严格传入 RAW（大小写不敏感）；不要用其他自然语言替代 RAW。",
+		"不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 prompt 是否为空以及是否为 RAW 决定。", 
 	]);
 });
 
@@ -184,8 +188,7 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 					...((builtInTool.parameters as unknown as Record<string, unknown>).properties as Record<string, unknown>),
 					prompt: {
 						type: "string",
-						description:
-							"可选的 Bash 输出处理要求。默认不传，原样返回，不调用总结模型。只有明确需要总结、摘要、提取错误等，且能接受摘要丢失逐字细节时才填写；输出很长但需求不明确时也可能按需总结。需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或严格填写 RAW（大小写不敏感）。不会传给底层 bash 执行。",
+						description: BASH_OUTPUT_PROMPT_DESCRIPTION,
 					},
 				},
 				required: Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
@@ -203,8 +206,7 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 					...(builtInParameters.properties as Record<string, unknown>),
 					outputPrompt: {
 						type: "string",
-						description:
-							"可选。默认不传，原样返回，不调用总结模型。仅在明确需要摘要、提取错误/警告等且输出较长时填写；需要所有匹配、完整原文、逐条结果、代码、diff 或日志原文时不要填写，或填写 RAW（大小写不敏感）。不会传给底层工具执行。",
+						description: OUTPUT_PROMPT_DESCRIPTION,
 					},
 				},
 			});
