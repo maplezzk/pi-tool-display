@@ -1022,6 +1022,23 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     lines.push(theme.fg("muted", `⏱ ${timing.join(" · ")}`));
   }
 
+  const statusLabels: Record<string, string> = {
+    summarized: "已压缩",
+    disabled: "未启用总结",
+    "not-requested": "保留原文：未请求摘要",
+    "full-output": "保留原文：要求完整结果",
+    "below-threshold": "保留原文：低于触发阈值",
+    "unknown-short": "保留原文：模糊要求且输出不够长",
+    "diagnostic-failed": "保留原文：无法读取完整输出",
+    "summary-failed": "保留原文：总结失败",
+  };
+  const statusLabel = typeof record.outputSummaryStatus === "string"
+    ? statusLabels[record.outputSummaryStatus] ?? record.outputSummaryStatus
+    : undefined;
+  if (statusLabel) {
+    lines.push(theme.fg("muted", `↳ 输出处理：${statusLabel}`));
+  }
+
   if (summaryTriggerMinChars !== undefined) {
     const triggerMax = summaryTriggerMaxChars === null || summaryTriggerMaxChars === undefined
       ? "无"

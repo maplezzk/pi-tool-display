@@ -166,6 +166,7 @@ test("bash summary renders prompt and summary from details", () => {
 		},
 	});
 	assert.match(resultRendered, /✦ 输出摘要/);
+	assert.match(resultRendered, /↳ 输出处理：已压缩/);
 	assert.match(resultRendered, /⏱ 工具 0\.0s · 压缩 0\.0s/);
 	assert.match(resultRendered, /↳ 字符 1000 → 100 · 10\.00x · 节省 90\.0%/);
 	assert.match(resultRendered, /总结触发：≥ 200 字符 · 输入上限：无 · 总结结果上限：1000 字符/);
