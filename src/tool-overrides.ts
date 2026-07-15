@@ -1257,7 +1257,7 @@ function renderSearchResult(
   const lines = prepareOutputLines(extractTextOutput(result), options);
 
   if (config.searchOutputMode === "hidden") {
-    return textResult("");
+    return textResult(formatOutputDiagnostics(result.details, theme).trimStart());
   }
 
   const hintCtx: PreviewHintContext = { lines, config, theme, options, details };
@@ -1526,7 +1526,7 @@ function renderReadDisplayResult(
   }
 
   if (config.readOutputMode === "hidden") {
-    return textResult("");
+    return textResult(formatOutputDiagnostics(result.details, theme).trimStart());
   }
 
   const details = result.details as ReadToolDetails | undefined;

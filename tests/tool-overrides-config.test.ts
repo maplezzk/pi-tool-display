@@ -150,6 +150,34 @@ function renderToolCall(
 	};
 }
 
+test("hidden read/search output still renders output audit diagnostics", async () => {
+	const config = buildConfig({
+		readOutputMode: "hidden",
+		searchOutputMode: "hidden",
+	});
+	const { api, registeredTools, eventHandlers } = createExtensionApiStub();
+	registerToolDisplayOverrides(api, () => config);
+	await runLifecycle(eventHandlers);
+
+	const details = {
+		toolExecutionMs: 120,
+		originalOutputChars: 2400,
+		summaryTriggerMinChars: 200,
+		missedCompressionRatio: 2,
+		outputSummaryStatus: "not-requested",
+	};
+	for (const toolName of ["read", "grep", "find"]) {
+		const rendered = renderToolResult(registeredTools.find((tool) => tool.name === toolName), {
+			text: "hidden output",
+			details,
+		});
+		assert.match(rendered, /✦ 输出审计/);
+		assert.match(rendered, /原文/);
+		assert.match(rendered, /字符 2400/);
+		assert.match(rendered, /工具 0\.1s/);
+	}
+});
+
 test("current local-style config keeps read/search/MCP output modes distinct", async () => {
 	const config = buildConfig({
 		readOutputMode: "summary",
