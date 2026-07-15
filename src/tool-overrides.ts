@@ -1072,17 +1072,17 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     ));
   }
 
-  if (record.outputSummaryStatus === "disabled" && record.outputSummaryAdvice) {
-    lines.push(theme.fg("warning", `⚠ 输出处理提醒：${record.outputSummaryAdvice}`));
-  }
-
   const anomalies = Array.isArray(record.outputSummaryAnomalies)
     ? record.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
     : [];
+  if (record.outputSummaryStatus === "disabled" && record.outputSummaryAdvice) {
+    lines.push(theme.fg("warning", `⚠ 输出处理提醒：${record.outputSummaryAdvice}`));
+  }
   if (anomalies.length > 0 || (record.outputSummaryAdvice && record.outputSummaryStatus !== "disabled")) {
+    const hasAnomaly = anomalies.length > 0;
     lines.push(theme.fg(
-      "warning",
-      `⚠ 输出处理提醒：${record.outputSummaryAdvice ?? anomalies.join("、")}`,
+      hasAnomaly ? "error" : "warning",
+      `${hasAnomaly ? "⛔ 输出处理异常" : "⚠ 输出处理提醒"}：${record.outputSummaryAdvice ?? anomalies.join("、")}`,
     ));
   }
 
