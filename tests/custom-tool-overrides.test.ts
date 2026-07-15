@@ -177,6 +177,33 @@ test("bash summary renders prompt and summary from details", () => {
 	assert.doesNotMatch(resultRendered, /提取错误和最终状态/);
 });
 
+test("bash raw diagnostics render original character count and decision", () => {
+	const { api, registeredTools } = createExtensionApiStub();
+	registerToolDisplayOverrides(api, () => ({
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		bashOutputMode: "summary",
+	}));
+
+	const bash = registeredTools.find((tool) => tool.name === "bash");
+	assert.ok(bash);
+	const rendered = renderToolRawResult(bash, {
+		content: [{ type: "text", text: "原始输出" }],
+		details: {
+			toolExecutionMs: 12,
+			originalOutputChars: 2000,
+			summaryTriggerMinChars: 200,
+			summaryTriggerMaxChars: null,
+			summaryResultMaxChars: 100000,
+			outputSummaryStatus: "full-output",
+		},
+	});
+
+	assert.match(rendered, /↳ 输出处理：保留原文：要求完整结果/);
+	assert.match(rendered, /↳ 原始字符：2000/);
+	assert.match(rendered, /总结触发：≥ 200 字符 · 输入上限：无 · 总结结果上限：100000 字符/);
+	assert.match(rendered, /⏱ 工具 0\.0s · 未压缩/);
+});
+
 test("normalizeToolDisplayConfig defaults customToolOverrides to an empty opt-in map", () => {
 	const config = normalizeToolDisplayConfig({}) as ToolDisplayConfigWithCustomOverrides;
 

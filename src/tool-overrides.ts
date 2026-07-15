@@ -1061,6 +1061,11 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
       "muted",
       `↳ 字符 ${Math.round(originalOutputChars)} → ${Math.round(summaryChars)}${ratio}${saved}`,
     ));
+  } else if (originalOutputChars !== undefined) {
+    lines.push(theme.fg(
+      "muted",
+      `↳ 原始字符：${Math.round(originalOutputChars)}`,
+    ));
   }
 
   if (record.outputSummaryStatus === "disabled" && record.outputSummaryAdvice) {
