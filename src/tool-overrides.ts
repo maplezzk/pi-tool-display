@@ -983,6 +983,9 @@ type OutputSummaryDetails = {
   summaryChars?: number;
   compressionRatio?: number;
   compressionSavedPercent?: number;
+  summaryTriggerMinChars?: number;
+  summaryTriggerMaxChars?: number | null;
+  summaryResultMaxChars?: number;
 };
 
 function getFiniteNumber(value: unknown): number | undefined {
@@ -998,6 +1001,11 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const toolExecutionMs = getFiniteNumber(record.toolExecutionMs);
   const summaryDurationMs = getFiniteNumber(record.summaryDurationMs);
   const originalOutputChars = getFiniteNumber(record.originalOutputChars);
+  const summaryTriggerMinChars = getFiniteNumber(record.summaryTriggerMinChars);
+  const summaryTriggerMaxChars = record.summaryTriggerMaxChars === null
+    ? null
+    : getFiniteNumber(record.summaryTriggerMaxChars);
+  const summaryResultMaxChars = getFiniteNumber(record.summaryResultMaxChars);
   const summaryChars = getFiniteNumber(record.summaryChars);
   const compressionRatio = getFiniteNumber(record.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
@@ -1006,8 +1014,25 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   if (toolExecutionMs !== undefined || summaryDurationMs !== undefined) {
     const timing: string[] = [];
     if (toolExecutionMs !== undefined) timing.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
-    if (summaryDurationMs !== undefined) timing.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
+    if (summaryDurationMs !== undefined) {
+      timing.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
+    } else if (record.outputSummaryStatus && record.outputSummaryStatus !== "summarized") {
+      timing.push("未压缩");
+    }
     lines.push(theme.fg("muted", `⏱ ${timing.join(" · ")}`));
+  }
+
+  if (summaryTriggerMinChars !== undefined) {
+    const triggerMax = summaryTriggerMaxChars === null || summaryTriggerMaxChars === undefined
+      ? "无"
+      : `${Math.round(summaryTriggerMaxChars)} 字符`;
+    const resultMax = summaryResultMaxChars === undefined
+      ? "未配置"
+      : `${Math.round(summaryResultMaxChars)} 字符`;
+    lines.push(theme.fg(
+      "muted",
+      `↳ 总结触发：≥ ${Math.round(summaryTriggerMinChars)} 字符 · 输入上限：${triggerMax} · 总结结果上限：${resultMax}`,
+    ));
   }
 
   if (originalOutputChars !== undefined && summaryChars !== undefined) {
@@ -1021,10 +1046,14 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     ));
   }
 
+  if (record.outputSummaryStatus === "disabled" && record.outputSummaryAdvice) {
+    lines.push(theme.fg("warning", `⚠ 输出处理提醒：${record.outputSummaryAdvice}`));
+  }
+
   const anomalies = Array.isArray(record.outputSummaryAnomalies)
     ? record.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
     : [];
-  if (anomalies.length > 0 || record.outputSummaryAdvice) {
+  if (anomalies.length > 0 || (record.outputSummaryAdvice && record.outputSummaryStatus !== "disabled")) {
     lines.push(theme.fg(
       "warning",
       `⚠ 输出处理提醒：${record.outputSummaryAdvice ?? anomalies.join("、")}`,
