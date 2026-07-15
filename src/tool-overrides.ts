@@ -1006,89 +1006,59 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const summaryDurationMs = getFiniteNumber(record.summaryDurationMs);
   const originalOutputChars = getFiniteNumber(record.originalOutputChars);
   const summaryTriggerMinChars = getFiniteNumber(record.summaryTriggerMinChars);
-  const summaryTriggerMaxChars = record.summaryTriggerMaxChars === null
-    ? null
-    : getFiniteNumber(record.summaryTriggerMaxChars);
-  const summaryResultMaxChars = getFiniteNumber(record.summaryResultMaxChars);
   const summaryChars = getFiniteNumber(record.summaryChars);
   const compressionRatio = getFiniteNumber(record.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
-  const lines: string[] = [];
-
-  if (toolExecutionMs !== undefined || summaryDurationMs !== undefined) {
-    if (toolExecutionMs !== undefined) {
-      lines.push(theme.fg("muted", `工具耗时：${formatDurationSeconds(toolExecutionMs)}`));
-    }
-    if (summaryDurationMs !== undefined) {
-      lines.push(theme.fg("muted", `压缩耗时：${formatDurationSeconds(summaryDurationMs)}`));
-    } else if (record.outputSummaryStatus && record.outputSummaryStatus !== "summarized") {
-      lines.push(theme.fg("muted", "压缩耗时：未压缩"));
-    }
-  }
 
   const statusLabels: Record<string, string> = {
     summarized: "已压缩",
-    disabled: "未启用总结",
-    "not-requested": "保留原文：未请求摘要",
-    "full-output": "保留原文：要求完整结果",
-    "below-threshold": "保留原文：低于触发阈值",
-    "unknown-short": "保留原文：模糊要求且输出不够长",
-    "diagnostic-failed": "保留原文：无法读取完整输出",
-    "summary-failed": "保留原文：总结失败",
+    disabled: "原文·未启用",
+    "not-requested": "原文",
+    "full-output": "原文·RAW",
+    "below-threshold": "原文·低于阈值",
+    "diagnostic-failed": "原文·无法读取",
+    "summary-failed": "原文·总结失败",
   };
   const statusLabel = typeof record.outputSummaryStatus === "string"
     ? statusLabels[record.outputSummaryStatus] ?? record.outputSummaryStatus
     : undefined;
-  if (statusLabel) {
-    lines.push(theme.fg("muted", `处理状态：${statusLabel}`));
-  }
+  const parts: string[] = [];
 
-  if (summaryTriggerMinChars !== undefined) {
-    const triggerMax = summaryTriggerMaxChars === null || summaryTriggerMaxChars === undefined
-      ? "无"
-      : `${Math.round(summaryTriggerMaxChars)} 字符`;
-    const resultMax = summaryResultMaxChars === undefined
-      ? "未配置"
-      : `${Math.round(summaryResultMaxChars)} 字符`;
-    lines.push(theme.fg(
-      "muted",
-      `总结触发：≥ ${Math.round(summaryTriggerMinChars)} 字符 · 输入上限：${triggerMax} · 总结结果上限：${resultMax}`,
-    ));
-  }
-
+  if (statusLabel) parts.push(statusLabel);
   if (originalOutputChars !== undefined && summaryChars !== undefined) {
-    const ratio = compressionRatio !== undefined ? ` · ${compressionRatio.toFixed(2)}x` : "";
-    const saved = compressionSavedPercent !== undefined
-      ? ` · 节省 ${compressionSavedPercent.toFixed(1)}%`
-      : "";
-    lines.push(theme.fg(
-      "muted",
-      `字符 ${Math.round(originalOutputChars)} → ${Math.round(summaryChars)}${ratio}${saved}`,
-    ));
+    parts.push(`字符 ${Math.round(originalOutputChars)}→${Math.round(summaryChars)}`);
+    if (compressionRatio !== undefined) parts.push(`${compressionRatio.toFixed(2)}x`);
+    if (compressionSavedPercent !== undefined) parts.push(`省 ${compressionSavedPercent.toFixed(1)}%`);
   } else if (originalOutputChars !== undefined) {
-    lines.push(theme.fg(
-      "muted",
-      `原始字符：${Math.round(originalOutputChars)}`,
-    ));
+    parts.push(`字符 ${Math.round(originalOutputChars)}`);
+  }
+  if (summaryTriggerMinChars !== undefined) {
+    parts.push(`阈值≥${Math.round(summaryTriggerMinChars)}`);
+  }
+  if (toolExecutionMs !== undefined) {
+    parts.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
+  }
+  if (summaryDurationMs !== undefined) {
+    parts.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
   }
 
   const anomalies = Array.isArray(record.outputSummaryAnomalies)
     ? record.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
     : [];
-  if (record.outputSummaryStatus === "disabled" && record.outputSummaryAdvice) {
-    lines.push(theme.fg("warning", `⚠ 输出处理提醒：${record.outputSummaryAdvice}`));
-  }
-  if (anomalies.length > 0 || (record.outputSummaryAdvice && record.outputSummaryStatus !== "disabled")) {
-    const hasAnomaly = anomalies.length > 0;
-    lines.push(theme.fg(
+  const hasAnomaly = anomalies.length > 0;
+  const auditLine = parts.length > 0
+    ? `\n${theme.fg(hasAnomaly ? "error" : "muted", `✦ 输出审计 · ${parts.join(" · ")}`)}`
+    : "";
+
+  let warning = "";
+  if (record.outputSummaryAdvice) {
+    warning = `\n${theme.fg(
       hasAnomaly ? "error" : "warning",
-      `${hasAnomaly ? "⛔ 输出处理异常" : "⚠ 输出处理提醒"}：${record.outputSummaryAdvice ?? anomalies.join("、")}`,
-    ));
+      `${hasAnomaly ? "⛔ 输出处理异常" : "⚠ 输出处理提醒"}：${record.outputSummaryAdvice}`,
+    )}`;
   }
 
-  return lines.length > 0
-    ? `\n${theme.fg("accent", theme.bold("✦ 输出审计"))}\n${lines.map((line) => `  ${line}`).join("\n")}`
-    : "";
+  return `${auditLine}${warning}`;
 }
 
 function formatOutputSummaryBody(summaryText: string, theme: RenderTheme): string {
