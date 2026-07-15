@@ -990,6 +990,7 @@ type OutputSummaryDetails = {
   summaryTriggerMinChars?: number;
   summaryTriggerMaxChars?: number | null;
   summaryResultMaxChars?: number;
+  missedCompressionRatio?: number;
 };
 
 function getFiniteNumber(value: unknown): number | undefined {
@@ -1009,6 +1010,7 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const summaryChars = getFiniteNumber(record.summaryChars);
   const compressionRatio = getFiniteNumber(record.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
+  const missedCompressionRatio = getFiniteNumber(record.missedCompressionRatio);
 
   const statusLabels: Record<string, string> = {
     summarized: "已压缩",
@@ -1034,6 +1036,9 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   }
   if (summaryTriggerMinChars !== undefined) {
     parts.push(`阈值≥${Math.round(summaryTriggerMinChars)}`);
+  }
+  if (record.outputSummaryStatus === "not-requested" && missedCompressionRatio !== undefined) {
+    parts.push(`长输出≥${missedCompressionRatio.toFixed(1)}x`);
   }
   if (toolExecutionMs !== undefined) {
     parts.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
