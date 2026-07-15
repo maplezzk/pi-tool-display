@@ -196,13 +196,13 @@ test("renderBashCall shows spinner when executionStarted and isPartial are true"
 	const { text, stop } = createSpinningBashCall({ command: "npm test" }, state);
 	try {
 		const rendered = renderedText(text);
-		assert.match(rendered, /^⠋ \$ npm test · 0s$/);
+		assert.match(rendered, /^⏳ \$ npm test$/);
 	} finally {
 		stop();
 	}
 });
 
-test("renderBashCall animates frames without forcing a TUI redraw", async () => {
+test("renderBashCall uses a static indicator without a timer or redraw", async () => {
 	const state: Record<string, unknown> = {};
 	let invalidateCount = 0;
 	const { text, stop } = createSpinningBashCall(
@@ -211,16 +211,13 @@ test("renderBashCall animates frames without forcing a TUI redraw", async () => 
 		{ invalidate: () => { invalidateCount++; } },
 	);
 	try {
-		const frame0 = renderedText(text);
-		assert.match(frame0, /^⠋/);
-
-		// Wait for at least one interval tick (200ms interval)
+		const rendered = renderedText(text);
+		assert.equal(rendered, "⏳ $ npm test");
 		await new Promise((r) => setTimeout(r, 250));
-
-		const frame1 = renderedText(text);
-		assert.notEqual(frame1, frame0, "spinner frame should advance");
-		assert.match(frame1, /^⠙/);
-		assert.equal(invalidateCount, 0, "spinner animation must not force a full TUI redraw");
+		assert.equal(renderedText(text), rendered);
+		assert.equal(invalidateCount, 0, "static indicator must not force a TUI redraw");
+		const spinnerState = state[BASH_SPINNER_STATE_KEY] as Record<string, unknown>;
+		assert.equal(spinnerState.timer, undefined);
 	} finally {
 		stop();
 	}
@@ -230,7 +227,7 @@ test("renderBashCall stops spinner and clears timer when shouldSpin becomes fals
 	const state: Record<string, unknown> = {};
 	const { text, stop } = createSpinningBashCall({ command: "npm test" }, state);
 
-	assert.match(renderedText(text), /^⠋/);
+	assert.match(renderedText(text), /^⏳/);
 
 	// Transition to complete state via stop
 	stop();
@@ -314,8 +311,8 @@ test("renderBashCall creates spinner state when state is an array (arrays are ob
 		}),
 	);
 	// Arrays are objects in JS, so the implementation treats them as valid state carriers
-	assert.match(renderedText(text), /^⠋/);
-	// Clean up the interval set on the array
+	assert.match(renderedText(text), /^⏳/);
+	// No interval is created for the static indicator
 	const spyState = (stateArray as unknown as Record<string, unknown>)[BASH_SPINNER_STATE_KEY] as Record<string, unknown> | undefined;
 	if (spyState?.timer) {
 		clearInterval(spyState.timer as ReturnType<typeof setInterval>);
@@ -324,12 +321,12 @@ test("renderBashCall creates spinner state when state is an array (arrays are ob
 
 // ─── Elapsed Time Formatting ─────────────────────────────────────────────────
 
-test("renderBashCall shows elapsed seconds when spinning and under 60s", () => {
+test("renderBashCall uses a static indicator without elapsed animation", () => {
 	const state: Record<string, unknown> = {};
 	state[BASH_SPINNER_STATE_KEY] = { frameIndex: 0, startedAt: Date.now() };
 	const { text, stop } = createSpinningBashCall({ command: "npm test" }, state);
 	try {
-		assert.match(renderedText(text), /· \d+s$/);
+		assert.equal(renderedText(text), "⏳ $ npm test");
 	} finally {
 		stop();
 	}
@@ -356,8 +353,8 @@ test("multiple concurrent bash calls have independent spinner states", () => {
 		stopA();
 		assert.equal(renderedText(textA), "$ npm test", "A spinner stopped after stopA");
 
-		// stateB should still show spinner prefix (frame may not have advanced yet)
-		assert.match(renderedText(textB), /^⠋/, "B should still show spinner after A completed");
+		// stateB should still show the static indicator
+		assert.match(renderedText(textB), /^⏳/, "B should still show the indicator after A completed");
 	} finally {
 		stopA();
 		stopB();
@@ -392,9 +389,8 @@ test("renderBashCall handles repeated calls without creating multiple timers", (
 	}
 
 	const spinnerState = state[BASH_SPINNER_STATE_KEY] as Record<string, unknown>;
-	// Only one timer should be active (timer is only set if !spinnerState.timer)
-	const timerCount = spinnerState.timer !== undefined ? 1 : 0;
-	assert.equal(timerCount, 1, "multiple renderBashCall calls should not create multiple timers");
+	// Static indicator should never create a timer.
+	assert.equal(spinnerState.timer, undefined, "static indicator should not create a timer");
 
 	stop();
 });

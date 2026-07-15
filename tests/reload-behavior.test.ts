@@ -239,129 +239,51 @@ test("2: built-in tool overrides register before lifecycle events and re-registe
 });
 
 // ---------------------------------------------------------------------------
-// 3. Bash override cleanup (spinner timer)
+// 3. Bash override cleanup (static execution indicator)
 // ---------------------------------------------------------------------------
 
-test("3: bash spinner interval is created during partial execution and cleared on completion", () => {
+test("3: bash partial execution uses a static indicator without a timer", () => {
   const originalSetInterval = globalThis.setInterval;
-  const originalClearInterval = globalThis.clearInterval;
-
-  const createdIntervals: ReturnType<typeof setInterval>[] = [];
-  const clearedIntervals: ReturnType<typeof setInterval>[] = [];
-
-  // Mock setInterval to track creations
-  globalThis.setInterval = ((fn: (...args: unknown[]) => unknown, ms?: number, ..._args: unknown[]) => {
-    const id = originalSetInterval(fn as (...args: unknown[]) => unknown, ms ?? 0);
-    createdIntervals.push(id);
-    return id;
+  let createdIntervals = 0;
+  globalThis.setInterval = ((..._args: Parameters<typeof setInterval>) => {
+    createdIntervals++;
+    return originalSetInterval(() => {}, 60_000);
   }) as typeof globalThis.setInterval;
 
-  // Mock clearInterval to track clearings
-  globalThis.clearInterval = ((id: ReturnType<typeof setInterval>) => {
-    clearedIntervals.push(id);
-    originalClearInterval(id);
-  }) as typeof globalThis.clearInterval;
-
   try {
-    // Render context that triggers spinner
-    const textComponent = new Text("", 0, 0);
     const context: Record<string, unknown> = {
       executionStarted: true,
       isPartial: true,
       invalidate: () => {},
-      lastComponent: textComponent,
+      lastComponent: new Text("", 0, 0),
       state: {},
     };
-
-    // Create spinner
-    const result1 = renderBashCall(
+    const result = renderBashCall(
       { command: "sleep 5" },
       stubTheme,
       context as unknown as Parameters<typeof renderBashCall>[2],
     );
-    assert.ok(result1 instanceof Text, "renderBashCall returns a Text");
-    assert.ok(
-      createdIntervals.length > 0,
-      "spinner interval was created during partial execution",
-    );
-
-    // Simulate execution completing (reload-like: context becomes non-partial)
-    context.isPartial = false;
-    const result2 = renderBashCall(
-      { command: "sleep 5" },
-      stubTheme,
-      context as unknown as Parameters<typeof renderBashCall>[2],
-    );
-    assert.ok(result2 instanceof Text, "renderBashCall still returns Text");
-    assert.ok(
-      clearedIntervals.length > 0,
-      "spinner interval was cleared on execution completion",
-    );
-
-    // Verify the created interval was also cleared
-    const allCreatedCleared = createdIntervals.every((id) =>
-      clearedIntervals.includes(id),
-    );
-    assert.ok(allCreatedCleared, "all created spinner intervals were cleared");
+    assert.ok(result instanceof Text, "renderBashCall returns a Text");
+    assert.match(result.render(120).join("\n"), /^⏳/);
+    assert.equal(createdIntervals, 0, "static indicator creates no interval");
   } finally {
     globalThis.setInterval = originalSetInterval;
-    globalThis.clearInterval = originalClearInterval;
-    // Clean up any remaining intervals
-    for (const id of createdIntervals) {
-      if (!clearedIntervals.includes(id)) {
-        originalClearInterval(id);
-      }
-    }
   }
 });
 
-test("3: multiple consecutive bash render calls do not create duplicate timers", () => {
-  const originalSetInterval = globalThis.setInterval;
-  const originalClearInterval = globalThis.clearInterval;
+test("3: multiple consecutive bash render calls remain timer-free", () => {
+  const context: Record<string, unknown> = {
+    executionStarted: true,
+    isPartial: true,
+    invalidate: () => {},
+    lastComponent: new Text("", 0, 0),
+    state: {},
+  };
 
-  const createdIntervals: ReturnType<typeof setInterval>[] = [];
-
-  globalThis.setInterval = ((fn: (...args: unknown[]) => unknown, ms?: number, ..._args: unknown[]) => {
-    const id = originalSetInterval(fn, ms ?? 0);
-    createdIntervals.push(id);
-    return id;
-  }) as typeof globalThis.setInterval;
-
-  globalThis.clearInterval = ((id: ReturnType<typeof setInterval>) => {
-    originalClearInterval(id);
-  }) as typeof globalThis.clearInterval;
-
-  try {
-    const textComponent = new Text("", 0, 0);
-    const context: Record<string, unknown> = {
-      executionStarted: true,
-      isPartial: true,
-      invalidate: () => {},
-      lastComponent: textComponent,
-      state: {},
-    };
-
-    // Call renderBashCall multiple times - should only create ONE timer
-    renderBashCall({ command: "test" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
-    const afterFirst = createdIntervals.length;
-
-    renderBashCall({ command: "test" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
-    const afterSecond = createdIntervals.length;
-
-    // The timer should only be created once (guarded by spinnerState.timer check)
-    assert.equal(
-      afterSecond,
-      afterFirst,
-      "duplicate renderBashCall does not create another timer",
-    );
-
-    // Complete execution
-    context.isPartial = false;
-    renderBashCall({ command: "test" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
-  } finally {
-    globalThis.setInterval = originalSetInterval;
-    globalThis.clearInterval = originalClearInterval;
-  }
+  renderBashCall({ command: "test" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
+  renderBashCall({ command: "test" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
+  const spinnerState = (context.state as Record<string, unknown>).__piToolDisplayBashSpinner as Record<string, unknown>;
+  assert.equal(spinnerState.timer, undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -751,7 +673,7 @@ test("9: calling toolDisplayExtension three times (double reload) is safe", () =
   }
 });
 
-test("9: no duplicate setInterval across rapid reload-like scenarios", () => {
+test("9: rapid reload-like scenarios do not create Bash intervals", () => {
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
 
@@ -789,8 +711,8 @@ test("9: no duplicate setInterval across rapid reload-like scenarios", () => {
     renderBashCall({ command: "test" }, stubTheme, ctx1 as unknown as Parameters<typeof renderBashCall>[2]);
     renderBashCall({ command: "test" }, stubTheme, ctx2 as unknown as Parameters<typeof renderBashCall>[2]);
 
-    // Each context should get its own timer
-    assert.equal(createdIntervals.length, 2, "two contexts = two timers");
+    // Static indicators must not create timers for either context.
+    assert.equal(createdIntervals.length, 0, "two contexts = zero timers");
 
     // Clean up both
     ctx1.isPartial = false;
@@ -810,7 +732,7 @@ test("9: no duplicate setInterval across rapid reload-like scenarios", () => {
 // 10. Partial reload (active bash spinner mid-animation)
 // ---------------------------------------------------------------------------
 
-test("10: active bash spinner timer is cleaned up when execution transitions from partial to complete", () => {
+test("10: static Bash indicator needs no timer cleanup", () => {
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
 
@@ -838,9 +760,9 @@ test("10: active bash spinner timer is cleaned up when execution transitions fro
       state: {},
     };
 
-    // Start spinner (mid-animation)
+    // Start static indicator.
     renderBashCall({ command: "long-running-task" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
-    assert.equal(createdIntervals.length, 1, "one timer created for spinner");
+    assert.equal(createdIntervals.length, 0, "static indicator creates no timer");
 
     // Simulate partial reload: execution not started yet in new context
     // (e.g., reload happens while bash is still running)
@@ -857,19 +779,16 @@ test("10: active bash spinner timer is cleaned up when execution transitions fro
     renderBashCall({ command: "long-running-task" }, stubTheme, newContext as unknown as Parameters<typeof renderBashCall>[2]);
     assert.equal(
       createdIntervals.length,
-      1,
-      "no new timer for non-executing context",
+      0,
+      "no timer for non-executing context",
     );
 
     // Complete the original execution
     context.isPartial = false;
     renderBashCall({ command: "long-running-task" }, stubTheme, context as unknown as Parameters<typeof renderBashCall>[2]);
 
-    // Original timer should have been cleared
-    assert.ok(
-      clearedIntervals.length > 0,
-      "original spinner timer cleared on completion",
-    );
+    // There is no timer to clear.
+    assert.equal(clearedIntervals.length, 0, "no timer cleanup is required");
   } finally {
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;

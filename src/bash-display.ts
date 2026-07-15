@@ -183,36 +183,15 @@ export function renderBashCall(
 		return text;
 	}
 
+	// Bash 总结模型执行期间工具会长时间保持 partial。动态 spinner 会不断修改
+	// Text，并触发 TUI 重绘，即使不显式 invalidate 也可能造成闪烁。因此只显示
+	// 一个静态执行标记，彻底避免定时器和动画带来的重绘。
 	if (spinnerState) {
 		spinnerState.startedAt ??= Date.now();
-		if (!spinnerState.timer && typeof context.invalidate === "function") {
-			const timer = setInterval(() => {
-				spinnerState.frameIndex = (spinnerState.frameIndex + 1) % BASH_SPINNER_FRAMES.length;
-				text.setText(
-					buildBashCallText(
-						args,
-						theme,
-						BASH_SPINNER_FRAMES[spinnerState.frameIndex],
-						Date.now() - (spinnerState.startedAt ?? Date.now()),
-					),
-				);
-				// 不主动 invalidate：Bash 总结模型仍在执行时，工具调用会保持 partial。
-				// 每 200ms 强制重绘整个 TUI 会造成 Bash 执行期间闪烁；后续自然重绘时再显示最新帧。
-			}, BASH_SPINNER_INTERVAL_MS);
-			spinnerState.timer = timer;
-			registerTimer(timer);
-			registerCleanup(() => {
-				if (spinnerStatesByToolCallId.get(toolCallId || "") === spinnerState) {
-					stopSpinner(toolCallId, spinnerState);
-				}
-			});
+		if (spinnerState.timer) {
+			stopSpinner(toolCallId, spinnerState);
 		}
 	}
-
-	const spinnerFrame = spinnerState ? BASH_SPINNER_FRAMES[spinnerState.frameIndex] : undefined;
-	const elapsedMs = spinnerState?.startedAt !== undefined
-		? Date.now() - spinnerState.startedAt
-		: undefined;
-	text.setText(buildBashCallText(args, theme, spinnerFrame, elapsedMs));
+	text.setText(buildBashCallText(args, theme, spinnerState ? "⏳" : undefined));
 	return text;
 }

@@ -492,7 +492,7 @@ test("bash output modes stay distinct across opencode, summary, and preview", as
 	);
 });
 
-test("bash call spinner appears only while execution is active", async () => {
+test("bash call shows a static indicator only while execution is active", async () => {
 	const config = buildConfig({
 		bashOutputMode: "summary",
 	});
@@ -517,12 +517,10 @@ test("bash call spinner appears only while execution is active", async () => {
 			},
 		},
 	);
-	assert.match(running.output, /^⠋ \$ npm test · 0s$/);
+	assert.match(running.output, /^⏳ \$ npm test$/);
 
 	await new Promise((resolve) => setTimeout(resolve, 220));
-	const animatedFrame = normalizeRenderedText(running.component);
-	assert.notEqual(animatedFrame, running.output);
-	assert.match(animatedFrame, /^⠙ \$ npm test · 0s$/);
+	assert.equal(normalizeRenderedText(running.component), running.output);
 	assert.equal(invalidateCount, 0);
 
 	const complete = renderToolCall(
