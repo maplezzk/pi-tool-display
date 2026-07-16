@@ -140,9 +140,9 @@ interface BashToolOverrideOptions {
 
 const builtInToolCache = new Map<string, BuiltInTools>();
 export const BASH_OUTPUT_PROMPT_DESCRIPTION =
-  "必传的 Bash 输出处理要求。需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。传入其他非空文本时按 outputPrompt 要求调用总结模型。不会传给底层 bash 执行。";
+  "必传的 Bash 输出处理要求。需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。传入其他非空文本时按 outputPrompt 要求调用总结模型。若命令是编译或测试，用户只要成功/失败和错误摘要、明确说‘只告诉我’或‘不要返回完整日志’时，必须使用描述性 outputPrompt，不要使用 RAW；只有用户要求完整日志或逐行排错时才使用 RAW。不会传给底层 bash 执行。";
 export const OUTPUT_PROMPT_DESCRIPTION =
-  "必传的输出处理要求。需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。传入其他非空文本时按 outputPrompt 要求调用总结模型。不会传给底层工具执行。";
+  "必传的输出处理要求。需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。传入其他非空文本时按 outputPrompt 要求调用总结模型。若用户需要枚举常量名、code 值、字段声明、注解或 SQL 等精确字面值用于复制、编码或数据转换，即使使用‘列出’或‘提取’，也必须使用 RAW；仅询问‘有哪些字段/方法’且同时说‘大概’、‘用途’、‘业务含义’或‘整体’时，按整体概览使用描述性 outputPrompt，不要因为局部出现‘有哪些’就使用 RAW。不会传给底层工具执行。";
 const RTK_COMPACTION_LABEL = "compacted by RTK";
 export const WRITE_EXECUTION_META_LIMIT = 100;
 const WRITE_EXECUTION_META_STATE_KEY = "__piToolDisplayWriteExecutionMeta";
