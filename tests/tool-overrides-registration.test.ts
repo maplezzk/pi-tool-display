@@ -121,7 +121,7 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 		const builtInMetadata = builtInTool as unknown as RegisteredToolLike;
 		assert.ok(registeredTool, `expected '${name}' to be registered`);
 		if (name === "bash") {
-			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并默认保留原文");
+			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并处理输出");
 		} else {
 			assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
 		}
@@ -134,10 +134,9 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
 	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
-		"outputPrompt 是可选参数；默认不要传，普通命令结果应原样返回。",
-		"只要传入非空且非 RAW 的 outputPrompt，就表示要求调用总结模型；outputPrompt 的具体内容决定总结保留哪些信息。",
-		"需要完整原文时严格传入 RAW（大小写不敏感）；不要用其他自然语言替代 RAW。",
-		"不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 outputPrompt 是否为空以及是否为 RAW 决定。", 
+		"outputPrompt 是必传参数；需要完整原文时严格传入 RAW（大小写不敏感）。",
+		"不要填写‘完整输出原文’等自然语言；只有严格的 RAW 才表示不调用总结模型。",
+		"传入其他非空 outputPrompt 时调用总结模型，具体内容决定总结保留哪些信息。",
 	]);
 });
 
@@ -191,11 +190,14 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 						description: BASH_OUTPUT_PROMPT_DESCRIPTION,
 					},
 				},
-				required: Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
-					? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
-						(value): value is string => typeof value === "string" && value !== "outputPrompt",
-					)
-					: [],
+				required: [
+					...(Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
+						? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
+							(value): value is string => typeof value === "string" && value !== "outputPrompt",
+						)
+						: []),
+					"outputPrompt",
+				],
 			};
 			assert.deepEqual(registeredTool.parameters, expectedBashParameters);
 		} else if (["read", "grep", "find"].includes(name)) {
@@ -209,6 +211,14 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 						description: OUTPUT_PROMPT_DESCRIPTION,
 					},
 				},
+				required: [
+					...(Array.isArray(builtInParameters.required)
+						? (builtInParameters.required as unknown[]).filter(
+							(value): value is string => typeof value === "string" && value !== "outputPrompt",
+						)
+						: []),
+					"outputPrompt",
+				],
 			});
 		} else {
 			assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
