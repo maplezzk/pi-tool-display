@@ -22,7 +22,7 @@ import {
   createWriteTool,
   formatSize,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 import { resolvePiAgentDir } from "./agent-dir.js";
 import { renderBashCall } from "./bash-display.js";
 import { logToolDisplayDebug } from "./debug-logger.js";
@@ -1588,6 +1588,69 @@ function renderEditDisplayCall(
   return buildPendingDiffCallComponent(summaryText, previewData, context, getConfig(), theme);
 }
 
+interface FileEditReviewResultDetails {
+  name?: string;
+  rulesFile?: string;
+  status?: string;
+  summary?: string;
+  durationMs?: number;
+  error?: string;
+}
+
+interface FileEditReviewAuditDetails {
+  status?: string;
+  filePath?: string;
+  toolName?: string;
+  durationMs?: number;
+  warnings?: string[];
+  reviewers?: FileEditReviewResultDetails[];
+}
+
+function appendFileEditReviewAudit(
+  component: Component,
+  details: unknown,
+  theme: RenderTheme,
+): Component {
+  const audit = toRecord(toRecord(details).fileEditReview) as FileEditReviewAuditDetails;
+  const reviewers = Array.isArray(audit.reviewers)
+    ? audit.reviewers.filter((reviewer): reviewer is FileEditReviewResultDetails => Boolean(reviewer) && typeof reviewer === "object")
+    : [];
+  const warnings = Array.isArray(audit.warnings)
+    ? audit.warnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
+  if (!audit.status && reviewers.length === 0 && warnings.length === 0) return component;
+
+  const statusLabels: Record<string, string> = {
+    passed: "已通过",
+    rejected: "未通过",
+    failed: "审查失败·已放行",
+    skipped: "已跳过",
+    disabled: "未启用",
+  };
+  const status = typeof audit.status === "string" ? statusLabels[audit.status] ?? audit.status : "未知";
+  const reviewerLines = reviewers.map((reviewer) => {
+    const reviewerStatus = reviewer.status === "passed"
+      ? "✓ 通过"
+      : reviewer.status === "rejected"
+        ? "✗ 不通过"
+        : reviewer.status === "failed"
+          ? "! 失败·已放行"
+          : "- 跳过";
+    const duration = typeof reviewer.durationMs === "number" ? ` ${(reviewer.durationMs / 1000).toFixed(1)}s` : "";
+    const result = reviewer.summary ?? reviewer.error ?? "";
+    return `  ${reviewer.name ?? "reviewer"} · ${reviewerStatus}${duration}${result ? ` · ${result}` : ""}`;
+  });
+  const lines = [
+    `✦ 编辑审查 · ${status} · ${reviewers.length} 个审查 prompt · 工具 ${(typeof audit.durationMs === "number" ? audit.durationMs / 1000 : 0).toFixed(1)}s`,
+    ...reviewerLines,
+    ...warnings.map((warning) => `⚠ 规则提醒：${warning}`),
+  ];
+  const container = new Container();
+  container.addChild(component);
+  container.addChild(new Text(theme.fg(audit.status === "rejected" ? "error" : "muted", lines.join("\n")), 0, 0));
+  return container;
+}
+
 function renderEditDisplayResult(
   result: ToolRenderInput & { isError?: boolean },
   options: ToolRenderResultOptions,
@@ -1604,12 +1667,16 @@ function renderEditDisplayResult(
 
   const config = getConfig();
   const details = result.details as EditToolDetails | undefined;
-  return renderEditDiffResult(
-    details,
-    { expanded: options.expanded, filePath: getAdapterPath(context?.args, adapter) },
-    config,
+  return appendFileEditReviewAudit(
+    renderEditDiffResult(
+      details,
+      { expanded: options.expanded, filePath: getAdapterPath(context?.args, adapter) },
+      config,
+      theme,
+      fallbackText,
+    ),
+    result.details,
     theme,
-    fallbackText,
   );
 }
 
@@ -2125,17 +2192,21 @@ export function registerToolDisplayOverrides(
         context,
         writeExecutionMetaByToolCallId,
       );
-      return renderWriteDiffResult(
-        content,
-        {
-          expanded: options.expanded,
-          filePath: getToolPathArg(context?.args),
-          previousContent: executionMeta?.previousContent,
-          fileExistedBeforeWrite: executionMeta?.fileExistedBeforeWrite ?? false,
-        },
-        config,
+      return appendFileEditReviewAudit(
+        renderWriteDiffResult(
+          content,
+          {
+            expanded: options.expanded,
+            filePath: getToolPathArg(context?.args),
+            previousContent: executionMeta?.previousContent,
+            fileExistedBeforeWrite: executionMeta?.fileExistedBeforeWrite ?? false,
+          },
+          config,
+          theme,
+          fallbackText,
+        ),
+        result.details,
         theme,
-        fallbackText,
       );
     },
     });

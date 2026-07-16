@@ -202,6 +202,37 @@ test("bash raw diagnostics render original character count and decision", () => 
 	assert.match(rendered, /✦ 输出审计/);
 });
 
+test("edit and write results render file review status and per-reviewer summaries", () => {
+	const { api, registeredTools } = createExtensionApiStub();
+	registerToolDisplayOverrides(api, () => ({
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+	}));
+
+	const edit = registeredTools.find((tool) => tool.name === "edit");
+	assert.ok(edit);
+	const rendered = renderToolRawResult(edit, {
+		content: [{ type: "text", text: "Successfully replaced text." }],
+		details: {
+			diff: "--- a/src/app.ts\\n+++ b/src/app.ts\\n@@\\n-const lang = 'en';\\n+const lang = 'zh';",
+			fileEditReview: {
+				status: "rejected",
+				filePath: "src/app.ts",
+				toolName: "edit",
+				durationMs: 1250,
+				reviewers: [
+					{ name: "coding-taste", rulesFile: "rules.md", status: "rejected", durationMs: 800, summary: "语言不符合规则" },
+					{ name: "security", rulesFile: "security.md", status: "passed", durationMs: 450, summary: "通过" },
+				],
+				warnings: [],
+			},
+		},
+	});
+
+	assert.match(rendered, /✦ 编辑审查 · 未通过 · 2 个审查 prompt · 工具 1\.3s/);
+	assert.match(rendered, /coding-taste · ✗ 不通过 0\.8s · 语言不符合规则/);
+	assert.match(rendered, /security · ✓ 通过 0\.5s · 通过/);
+});
+
 test("normalizeToolDisplayConfig defaults customToolOverrides to an empty opt-in map", () => {
 	const config = normalizeToolDisplayConfig({}) as ToolDisplayConfigWithCustomOverrides;
 
