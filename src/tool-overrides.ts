@@ -140,9 +140,9 @@ interface BashToolOverrideOptions {
 
 const builtInToolCache = new Map<string, BuiltInTools>();
 export const BASH_OUTPUT_PROMPT_DESCRIPTION =
-  "可选的 Bash 输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 prompt 就调用总结模型，具体要求由 prompt 决定。需要完整原文时严格填写 RAW（大小写不敏感）。不会传给底层 bash 执行。";
+  "可选的 Bash 输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 prompt 就调用总结模型，具体要求由 prompt 决定。重要：需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。不会传给底层 bash 执行。";
 export const OUTPUT_PROMPT_DESCRIPTION =
-  "可选。默认不传，原样返回；传入任意非空且非 RAW 的 outputPrompt 就调用总结模型，具体要求由该 prompt 决定。需要完整原文时填写 RAW（大小写不敏感）。不会传给底层工具执行。";
+  "可选的输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 outputPrompt 就调用总结模型，具体要求由该 prompt 决定。重要：需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。不会传给底层工具执行。";
 const RTK_COMPACTION_LABEL = "compacted by RTK";
 export const WRITE_EXECUTION_META_LIMIT = 100;
 const WRITE_EXECUTION_META_STATE_KEY = "__piToolDisplayWriteExecutionMeta";
