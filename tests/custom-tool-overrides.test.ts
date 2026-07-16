@@ -202,6 +202,29 @@ test("bash raw diagnostics render original character count and decision", () => 
 	assert.match(rendered, /✦ 输出审计/);
 });
 
+test("summary failure renders the raw error only in TUI diagnostics", () => {
+	const { api, registeredTools } = createExtensionApiStub();
+	registerToolDisplayOverrides(api, () => ({
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		bashOutputMode: "summary",
+	}));
+
+	const bash = registeredTools.find((tool) => tool.name === "bash");
+	assert.ok(bash);
+	const rendered = renderToolRawResult(bash, {
+		content: [{ type: "text", text: "原始输出" }],
+		details: {
+			outputSummaryStatus: "summary-failed",
+			outputSummaryAnomalies: ["summary-failed"],
+			outputSummaryAdvice: "总结失败，已保留原文；请检查总结模型配置或鉴权。",
+			outputSummaryError: "401 Unauthorized: invalid API key",
+		},
+	});
+
+	assert.match(rendered, /⛔ 输出处理异常：总结失败，已保留原文/);
+	assert.match(rendered, /↳ 原始错误：401 Unauthorized: invalid API key/);
+});
+
 test("edit and write results render file review status and per-reviewer summaries", () => {
 	const { api, registeredTools } = createExtensionApiStub();
 	registerToolDisplayOverrides(api, () => ({

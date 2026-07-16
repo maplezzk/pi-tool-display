@@ -983,6 +983,8 @@ type OutputSummaryDetails = {
   outputSummaryStatus?: string;
   outputSummaryAnomalies?: string[];
   outputSummaryAdvice?: string;
+  /** 仅供 TUI 展示的底层错误，不应进入 Agent 的 tool result content。 */
+  outputSummaryError?: string;
   originalOutputChars?: number;
   summaryChars?: number;
   compressionRatio?: number;
@@ -1060,9 +1062,15 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
 
   let warning = "";
   if (record.outputSummaryAdvice) {
-    warning = `\n${theme.fg(
+    warning += `\n${theme.fg(
       hasAnomaly ? "error" : "warning",
       `${hasAnomaly ? "⛔ 输出处理异常" : "⚠ 输出处理提醒"}：${record.outputSummaryAdvice}`,
+    )}`;
+  }
+  if (record.outputSummaryError) {
+    warning += `\n${theme.fg(
+      "warning",
+      `↳ 原始错误：${sanitizeAnsiForThemedOutput(record.outputSummaryError)}`,
     )}`;
   }
 
