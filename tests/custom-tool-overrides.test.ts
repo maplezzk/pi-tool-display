@@ -142,7 +142,7 @@ test("bash summary renders prompt and summary from details", () => {
 	assert.ok(bash);
 
 	const callRendered = renderToText(bash.renderCall?.(
-		{ command: "printf deploy", prompt: "提取错误和最终状态" },
+		{ command: "printf deploy", outputPrompt: "提取错误和最终状态" },
 		createTheme(),
 		{ executionStarted: false, isPartial: false },
 	));

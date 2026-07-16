@@ -140,7 +140,7 @@ interface BashToolOverrideOptions {
 
 const builtInToolCache = new Map<string, BuiltInTools>();
 export const BASH_OUTPUT_PROMPT_DESCRIPTION =
-  "可选的 Bash 输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 prompt 就调用总结模型，具体要求由 prompt 决定。重要：需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。不会传给底层 bash 执行。";
+  "可选的 Bash 输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 outputPrompt 就调用总结模型，具体要求由 outputPrompt 决定。重要：需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。不会传给底层 bash 执行。";
 export const OUTPUT_PROMPT_DESCRIPTION =
   "可选的输出处理要求。默认不传，原样返回；传入任意非空且非 RAW 的 outputPrompt 就调用总结模型，具体要求由该 prompt 决定。重要：需要完整原文时，值必须严格为 RAW（仅这三个 ASCII 字母，大小写不敏感，可带前后空格）；不要填写‘完整输出原文’等自然语言，否则会调用总结模型。不会传给底层工具执行。";
 const RTK_COMPACTION_LABEL = "compacted by RTK";
@@ -1910,13 +1910,13 @@ export function registerToolDisplayOverrides(
     ...clonedBashParameters,
     properties: {
       ...toRecord(clonedBashParameters.properties),
-      prompt: {
+      outputPrompt: {
         type: "string",
         description: BASH_OUTPUT_PROMPT_DESCRIPTION,
       },
     },
     required: Array.isArray(clonedBashParameters.required)
-      ? clonedBashParameters.required.filter((value): value is string => typeof value === "string" && value !== "prompt")
+      ? clonedBashParameters.required.filter((value): value is string => typeof value === "string" && value !== "outputPrompt")
       : [],
   };
   const writeExecutionMetaByToolCallId = new Map<string, WriteExecutionMeta>();
@@ -1988,9 +1988,6 @@ export function registerToolDisplayOverrides(
   ): Record<string, unknown> {
     const executionParams = { ...params };
     delete executionParams.outputPrompt;
-    if (toolName === "bash") {
-      delete executionParams.prompt;
-    }
     return executionParams;
   }
 
@@ -2227,13 +2224,13 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("bash"),
     parameters: bashParameters,
     description:
-      "执行 bash 命令并返回 stdout/stderr。默认返回完整原始输出，不自动调用总结模型。只要传入非空且非 RAW 的 prompt，就按 prompt 要求调用总结模型；需要完整原文时严格传入 RAW（大小写不敏感）。",
+      "执行 bash 命令并返回 stdout/stderr。默认返回完整原始输出，不自动调用总结模型。只要传入非空且非 RAW 的 outputPrompt，就按 outputPrompt 要求调用总结模型；需要完整原文时严格传入 RAW（大小写不敏感）。",
     promptSnippet: "执行 bash 命令并默认保留原文",
     promptGuidelines: [
-      "prompt 是可选参数；默认不要传，普通命令结果应原样返回。",
-      "只要传入非空且非 RAW 的 prompt，就表示要求调用总结模型；prompt 的具体内容决定总结保留哪些信息。",
+      "outputPrompt 是可选参数；默认不要传，普通命令结果应原样返回。",
+      "只要传入非空且非 RAW 的 outputPrompt，就表示要求调用总结模型；outputPrompt 的具体内容决定总结保留哪些信息。",
       "需要完整原文时严格传入 RAW（大小写不敏感）；不要用其他自然语言替代 RAW。",
-      "不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 prompt 是否为空以及是否为 RAW 决定。",
+      "不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 outputPrompt 是否为空以及是否为 RAW 决定。", 
     ],
     renderCall(args, theme, context) {
       return renderBashCall(args, theme, context as never);

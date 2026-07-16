@@ -134,10 +134,10 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
 	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
-		"prompt 是可选参数；默认不要传，普通命令结果应原样返回。",
-		"只要传入非空且非 RAW 的 prompt，就表示要求调用总结模型；prompt 的具体内容决定总结保留哪些信息。",
+		"outputPrompt 是可选参数；默认不要传，普通命令结果应原样返回。",
+		"只要传入非空且非 RAW 的 outputPrompt，就表示要求调用总结模型；outputPrompt 的具体内容决定总结保留哪些信息。",
 		"需要完整原文时严格传入 RAW（大小写不敏感）；不要用其他自然语言替代 RAW。",
-		"不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 prompt 是否为空以及是否为 RAW 决定。", 
+		"不要根据‘逐行、完整、所有、代码、日志’等词自行改变处理模式；是否总结只由 outputPrompt 是否为空以及是否为 RAW 决定。", 
 	]);
 });
 
@@ -186,14 +186,14 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 				...(builtInTool.parameters as unknown as Record<string, unknown>),
 				properties: {
 					...((builtInTool.parameters as unknown as Record<string, unknown>).properties as Record<string, unknown>),
-					prompt: {
+					outputPrompt: {
 						type: "string",
 						description: BASH_OUTPUT_PROMPT_DESCRIPTION,
 					},
 				},
 				required: Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
 					? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
-						(value): value is string => typeof value === "string" && value !== "prompt",
+						(value): value is string => typeof value === "string" && value !== "outputPrompt",
 					)
 					: [],
 			};
