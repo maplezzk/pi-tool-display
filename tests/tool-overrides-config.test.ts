@@ -165,6 +165,7 @@ test("hidden read/search output still renders output audit diagnostics", async (
 		summaryTriggerMinChars: 200,
 		missedCompressionRatio: 2,
 		outputSummaryStatus: "not-requested",
+		fullOutputPath: "/tmp/pi-distill/summary-example.txt",
 	};
 	for (const toolName of ["read", "grep", "find"]) {
 		const rendered = renderToolResult(registeredTools.find((tool) => tool.name === toolName), {
@@ -175,6 +176,7 @@ test("hidden read/search output still renders output audit diagnostics", async (
 		assert.match(rendered, /原文/);
 		assert.match(rendered, /字符 2400/);
 		assert.match(rendered, /工具 0\.1s/);
+		assert.match(rendered, /完整输出：\/tmp\/pi-distill\/summary-example\.txt/);
 	}
 });
 

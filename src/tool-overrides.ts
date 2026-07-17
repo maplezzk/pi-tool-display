@@ -1013,6 +1013,7 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   const compressionRatio = getFiniteNumber(record.compressionRatio);
   const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
   const missedCompressionRatio = getFiniteNumber(record.missedCompressionRatio);
+  const fullOutputPath = getStringField(details, "fullOutputPath");
 
   const statusLabels: Record<string, string> = {
     summarized: "已压缩",
@@ -1050,6 +1051,9 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
   }
   if (summaryDurationMs !== undefined) {
     parts.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
+  }
+  if (fullOutputPath) {
+    parts.push(`完整输出：${fullOutputPath}`);
   }
 
   const anomalies = Array.isArray(record.outputSummaryAnomalies)
