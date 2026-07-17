@@ -1057,7 +1057,7 @@ function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
     : [];
   const hasAnomaly = anomalies.length > 0;
   const auditLine = parts.length > 0
-    ? `\n${theme.fg(hasAnomaly ? "error" : "muted", `✦ 输出审计 · ${parts.join(" · ")}`)}`
+    ? `\n${theme.fg(hasAnomaly ? "error" : "muted", `🔍 输出审计 · ${parts.join(" · ")}`)}`
     : "";
 
   let warning = "";
@@ -1106,7 +1106,7 @@ function appendOutputSummary(
     return `${base}${diagnostics}`;
   }
 
-  return `${base}${diagnostics}\n${theme.fg("accent", theme.bold("✦ 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
+  return `${base}${diagnostics}\n${theme.fg("accent", theme.bold("📄 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
 }
 
 function formatBashSummary(

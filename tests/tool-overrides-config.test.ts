@@ -171,7 +171,7 @@ test("hidden read/search output still renders output audit diagnostics", async (
 			text: "hidden output",
 			details,
 		});
-		assert.match(rendered, /✦ 输出审计/);
+		assert.match(rendered, /🔍 输出审计/);
 		assert.match(rendered, /原文/);
 		assert.match(rendered, /字符 2400/);
 		assert.match(rendered, /工具 0\.1s/);

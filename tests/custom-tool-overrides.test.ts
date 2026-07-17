@@ -165,8 +165,8 @@ test("bash summary renders prompt and summary from details", () => {
 			outputSummaryStatus: "summarized",
 		},
 	});
-	assert.match(resultRendered, /✦ 输出摘要/);
-	assert.match(resultRendered, /✦ 输出审计 · 已压缩 · 字符 1000→100 · 10\.00x · 省 90\.0% · 阈值≥200 · 工具 0\.0s · 压缩 0\.0s/);
+	assert.match(resultRendered, /📄 输出摘要/);
+	assert.match(resultRendered, /🔍 输出审计 · 已压缩 · 字符 1000→100 · 10\.00x · 省 90\.0% · 阈值≥200 · 工具 0\.0s · 压缩 0\.0s/);
 	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
 	assert.match(resultRendered, /• 肇庆仓包含调拨/);
 	assert.match(resultRendered, /sheet_id/);
@@ -197,9 +197,9 @@ test("bash raw diagnostics render original character count and decision", () => 
 		},
 	});
 
-	assert.match(rendered, /✦ 输出审计 · 原文·RAW · 字符 2000 · 阈值≥200 · 长输出≥2\.0x · 工具 0\.0s/);
+	assert.match(rendered, /🔍 输出审计 · 原文·RAW · 字符 2000 · 阈值≥200 · 长输出≥2\.0x · 工具 0\.0s/);
 	assert.match(rendered, /⚠ 输出处理提醒：本次输出显式使用 RAW/);
-	assert.match(rendered, /✦ 输出审计/);
+	assert.match(rendered, /🔍 输出审计/);
 });
 
 test("summary failure renders the raw error only in TUI diagnostics", () => {
