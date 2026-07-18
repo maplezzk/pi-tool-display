@@ -45,10 +45,10 @@ Place this folder in one of Pi's auto-discovery locations:
 
 ```text
 # Global default (when PI_CODING_AGENT_DIR is unset)
-~/.pi/agent/extensions/pi-tool-display
+Pi 全局扩展目录下对应的 pi-tool-display 子目录
 
 # Project-specific
-.pi/extensions/pi-tool-display
+项目内 Pi 自动发现的扩展目录（参考 Pi 文档）
 ```
 
 ### npm package
@@ -144,8 +144,8 @@ registerToolExecutionMiddleware("bash", async (context, next) => {
 Runtime configuration is stored at:
 
 ```text
-Default global path: ~/.pi/agent/extensions/pi-tool-display/config.json
-Actual global path: $PI_CODING_AGENT_DIR/extensions/pi-tool-display/config.json when PI_CODING_AGENT_DIR is set
+Default global path: Pi 全局扩展目录下 pi-tool-display/config.json
+Actual global path: $PI_CODING_AGENT_DIR 对应扩展目录下 pi-tool-display/config.json (when PI_CODING_AGENT_DIR is set)
 ```
 
 A starter template is included at `config/config.example.json`.
@@ -341,7 +341,7 @@ Built-in tool overrides (including `bash`) are registered with deferred ownershi
 
 If your settings are not being applied:
 
-1. Check that the global Pi tool-display config exists (default: `~/.pi/agent/extensions/pi-tool-display/config.json`, respects `PI_CODING_AGENT_DIR`)
+1. Check that the global Pi tool-display config exists (default: Pi 全局扩展目录下的 `pi-tool-display/config.json`, respects `PI_CODING_AGENT_DIR`)
 2. Make sure the JSON is valid
 3. Run `/tool-display show` to inspect the effective config summary
 
