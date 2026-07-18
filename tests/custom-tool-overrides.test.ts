@@ -131,7 +131,7 @@ function renderToolRawResult(
 	);
 }
 
-test("bash summary renders prompt and summary from details", () => {
+test("built-in renderers stay independent from extension-specific result details", () => {
 	const { api, registeredTools } = createExtensionApiStub();
 	registerToolDisplayOverrides(api, () => ({
 		...DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -146,114 +146,16 @@ test("bash summary renders prompt and summary from details", () => {
 		createTheme(),
 		{ executionStarted: false, isPartial: false },
 	));
-	assert.match(callRendered, /📝 总结要求： 提取错误和最终状态/);
-	assert.doesNotMatch(callRendered, /总结要求：\n/);
+	assert.equal(callRendered, "$ printf deploy");
 
 	const resultRendered = renderToolRawResult(bash, {
-		content: [{ type: "text", text: "表格共包含 3 个 Sheet。" }],
+		content: [{ type: "text", text: "工具正文" }],
 		details: {
-			summaryText: "表格共包含 3 个 Sheet。\n\n- **肇庆仓包含调拨**\n- `sheet_id` 可见",
-			toolExecutionMs: 32,
-			summaryDurationMs: 7,
-			originalOutputChars: 1000,
-			summaryChars: 100,
-			compressionRatio: 10,
-			compressionSavedPercent: 90,
-			summaryTriggerMinChars: 200,
-			summaryTriggerMaxChars: null,
-			summaryResultMaxChars: 1000,
-			outputSummaryStatus: "summarized",
+			externalExtensionData: { status: "complete", text: "不应由 tool-display 解释" },
 		},
 	});
-	assert.match(resultRendered, /📄 输出摘要/);
-	assert.match(resultRendered, /🔍 输出审计 · 已压缩 · 字符 1000→100 · 10\.00x · 省 90\.0% · 阈值≥200 · 工具 0\.0s · 压缩 0\.0s/);
-	assert.match(resultRendered, /表格共包含 3 个 Sheet。/);
-	assert.match(resultRendered, /• 肇庆仓包含调拨/);
-	assert.match(resultRendered, /sheet_id/);
-	assert.doesNotMatch(resultRendered, /\*\*/);
-	assert.doesNotMatch(resultRendered, /提取错误和最终状态/);
-});
-
-test("bash raw diagnostics render original character count and decision", () => {
-	const { api, registeredTools } = createExtensionApiStub();
-	registerToolDisplayOverrides(api, () => ({
-		...DEFAULT_TOOL_DISPLAY_CONFIG,
-		bashOutputMode: "summary",
-	}));
-
-	const bash = registeredTools.find((tool) => tool.name === "bash");
-	assert.ok(bash);
-	const rendered = renderToolRawResult(bash, {
-		content: [{ type: "text", text: "原始输出" }],
-		details: {
-			toolExecutionMs: 12,
-			originalOutputChars: 2000,
-			summaryTriggerMinChars: 200,
-			summaryTriggerMaxChars: null,
-			summaryResultMaxChars: 100000,
-			missedCompressionRatio: 2,
-			outputSummaryStatus: "full-output",
-			outputSummaryAdvice: "本次输出显式使用 RAW，按要求保留原文。",
-		},
-	});
-
-	assert.match(rendered, /🔍 输出审计 · 原文·RAW · 字符 2000 · 阈值≥200 · 长输出≥2\.0x · 工具 0\.0s/);
-	assert.match(rendered, /⚠ 输出处理提醒：本次输出显式使用 RAW/);
-	assert.match(rendered, /🔍 输出审计/);
-});
-
-test("summary failure renders the raw error only in TUI diagnostics", () => {
-	const { api, registeredTools } = createExtensionApiStub();
-	registerToolDisplayOverrides(api, () => ({
-		...DEFAULT_TOOL_DISPLAY_CONFIG,
-		bashOutputMode: "summary",
-	}));
-
-	const bash = registeredTools.find((tool) => tool.name === "bash");
-	assert.ok(bash);
-	const rendered = renderToolRawResult(bash, {
-		content: [{ type: "text", text: "原始输出" }],
-		details: {
-			outputSummaryStatus: "summary-failed",
-			outputSummaryAnomalies: ["summary-failed"],
-			outputSummaryAdvice: "总结失败，已保留原文；请检查总结模型配置或鉴权。",
-			outputSummaryError: "401 Unauthorized: invalid API key",
-		},
-	});
-
-	assert.match(rendered, /⛔ 输出处理异常：总结失败，已保留原文/);
-	assert.match(rendered, /↳ 原始错误：401 Unauthorized: invalid API key/);
-});
-
-test("edit and write results render file review status and per-reviewer summaries", () => {
-	const { api, registeredTools } = createExtensionApiStub();
-	registerToolDisplayOverrides(api, () => ({
-		...DEFAULT_TOOL_DISPLAY_CONFIG,
-	}));
-
-	const edit = registeredTools.find((tool) => tool.name === "edit");
-	assert.ok(edit);
-	const rendered = renderToolRawResult(edit, {
-		content: [{ type: "text", text: "Successfully replaced text." }],
-		details: {
-			diff: "--- a/src/app.ts\\n+++ b/src/app.ts\\n@@\\n-const lang = 'en';\\n+const lang = 'zh';",
-			fileEditReview: {
-				status: "rejected",
-				filePath: "src/app.ts",
-				toolName: "edit",
-				durationMs: 1250,
-				reviewers: [
-					{ name: "coding-taste", rulesFile: "rules.md", status: "rejected", durationMs: 800, summary: "语言不符合规则" },
-					{ name: "security", rulesFile: "security.md", status: "passed", durationMs: 450, summary: "通过" },
-				],
-				warnings: [],
-			},
-		},
-	});
-
-	assert.match(rendered, /✦ 编辑审查 · 未通过 · 2 个审查 prompt · 工具 1\.3s/);
-	assert.match(rendered, /coding-taste · ✗ 不通过 0\.8s · 语言不符合规则/);
-	assert.match(rendered, /security · ✓ 通过 0\.5s · 通过/);
+	assert.match(resultRendered, /1 line returned/);
+	assert.doesNotMatch(resultRendered, /externalExtensionData|不应由 tool-display 解释/);
 });
 
 test("normalizeToolDisplayConfig defaults customToolOverrides to an empty opt-in map", () => {

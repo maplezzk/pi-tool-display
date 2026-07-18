@@ -8,7 +8,7 @@ import {
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import toolDisplayExtension from "../src/index.ts";
+import initializeToolDisplayExtension from "../src/index.ts";
 import { registerToolDisplayOverrides } from "../src/tool-overrides.ts";
 import { renderBashCall } from "../src/bash-display.ts";
 import { registerThinkingLabeling } from "../src/thinking-label.ts";
@@ -17,6 +17,13 @@ import { createToolDisplayDebugLogger } from "../src/debug-logger.ts";
 import { loadToolDisplayConfig, saveToolDisplayConfig } from "../src/config-store.ts";
 import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../src/types.ts";
 import type { PatchableUserMessagePrototype } from "../src/user-message-box-patch.ts";
+
+function toolDisplayExtension(
+  pi: ExtensionAPI,
+  initial = { config: DEFAULT_TOOL_DISPLAY_CONFIG },
+): void {
+  initializeToolDisplayExtension(pi, initial);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -947,10 +954,10 @@ test("12: extension loads config fresh on each call (no stale cache)", () => {
   // it re-reads. Since each test gets a fresh module instance, the cache is
   // fresh. We verify the loading mechanism works.
   const { api: api1 } = createApiStub();
-  assert.doesNotThrow(() => toolDisplayExtension(api1));
+  assert.doesNotThrow(() => initializeToolDisplayExtension(api1));
 
   const { api: api2 } = createApiStub();
-  assert.doesNotThrow(() => toolDisplayExtension(api2));
+  assert.doesNotThrow(() => initializeToolDisplayExtension(api2));
 });
 
 // ---------------------------------------------------------------------------

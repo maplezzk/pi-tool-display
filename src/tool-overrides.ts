@@ -147,6 +147,7 @@ const WRITE_PENDING_PREVIEW_STATE_KEY = "__piToolDisplayWritePendingPreview";
 
 const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
 const TOOL_DISPLAY_PENDING_DECORATIONS_KEY = Symbol.for("pi-tool-display.pendingDecorations.v1");
+const TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY = Symbol.for("pi-tool-display.pendingResultRenderMiddlewares.v1");
 const TOOL_DISPLAY_REGISTER_TOOL_INTERCEPTOR_KEY = Symbol.for("pi-tool-display.registerToolInterceptor.v1");
 const TOOL_DISPLAY_DECORATED_PROPERTIES = [
   "renderCall",
@@ -179,11 +180,43 @@ export interface ToolDisplayApi {
   decorateTool<T extends RuntimeToolDefinition>(tool: T, adapter?: ToolDisplayAdapter): T;
   registerAdapter(adapter: ToolDisplayAdapter): string;
   unregisterAdapter(id: string): boolean;
+  registerResultRenderMiddleware(registration: ToolResultRenderMiddlewareRegistration): string;
+  unregisterResultRenderMiddleware(id: string): boolean;
+  hasResultRenderMiddleware(id: string): boolean;
+  activateResultRenderPipeline(toolName: string): void;
+  isResultRenderPipelineActive(toolName: string): boolean;
+  renderResultWithMiddleware(
+    context: ToolResultRenderMiddlewareContext,
+    renderBase: () => unknown,
+  ): unknown;
+}
+
+export interface ToolResultRenderMiddlewareContext {
+  toolName: string;
+  result: unknown;
+  options: ToolRenderResultOptions;
+  theme: RenderTheme;
+  renderContext?: ToolRenderContextLike;
+}
+
+export type ToolResultRenderMiddleware = (
+  context: ToolResultRenderMiddlewareContext,
+  next: () => unknown,
+) => unknown;
+
+export interface ToolResultRenderMiddlewareRegistration {
+  id?: string;
+  toolName: string;
+  middleware: ToolResultRenderMiddleware;
 }
 
 interface PendingToolDisplayDecoration {
   tool: RuntimeToolDefinition;
   adapter?: ToolDisplayAdapter;
+}
+
+interface PendingResultRenderMiddleware extends ToolResultRenderMiddlewareRegistration {
+  id: string;
 }
 
 type DecoratedPropertyName = typeof TOOL_DISPLAY_DECORATED_PROPERTIES[number];
@@ -192,6 +225,7 @@ type ToolPropertyDescriptorSnapshot = Partial<Record<DecoratedPropertyName, Prop
 type GlobalWithToolDisplayApi = typeof globalThis & {
   [TOOL_DISPLAY_API_KEY]?: ToolDisplayApi;
   [TOOL_DISPLAY_PENDING_DECORATIONS_KEY]?: PendingToolDisplayDecoration[];
+  [TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY]?: PendingResultRenderMiddleware[];
 };
 
 type PiWithRegisterToolInterception = ExtensionAPI & {
@@ -884,7 +918,6 @@ function appendPreviewHints(preview: string, ctx: PreviewHintContext): string {
   if (config.showTruncationHints && toRecord(toRecord(details).truncation).truncated) {
     preview += `\n${theme.fg("warning", "(truncated by backend limits)")}`;
   }
-  preview += formatOutputDiagnostics(details, theme);
   return appendRtkAndExpandedHints(preview, ctx);
 }
 
@@ -919,7 +952,7 @@ function formatReadSummary(
     "warning",
     showTruncationHints ? truncationHint(details) : "",
   );
-  return appendOutputSummary(summary, details, theme);
+  return summary;
 }
 
 function formatSearchSummary(
@@ -939,151 +972,12 @@ function formatSearchSummary(
     "warning",
     showTruncationHints ? truncationHint(details) : "",
   );
-  return appendOutputSummary(summary, details, theme);
-}
-
-type OutputSummaryDetails = {
-  summaryText?: string;
-  summaryFilePath?: string;
-  toolExecutionMs?: number;
-  summaryDurationMs?: number;
-  outputSummaryIntent?: string;
-  outputSummaryStatus?: string;
-  outputSummaryAnomalies?: string[];
-  outputSummaryAdvice?: string;
-  /** 仅供 TUI 展示的底层错误，不应进入 Agent 的 tool result content。 */
-  outputSummaryError?: string;
-  originalOutputChars?: number;
-  summaryChars?: number;
-  compressionRatio?: number;
-  compressionSavedPercent?: number;
-  summaryTriggerMinChars?: number;
-  summaryTriggerMaxChars?: number | null;
-  summaryResultMaxChars?: number;
-  missedCompressionRatio?: number;
-};
-
-function getFiniteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function formatDurationSeconds(milliseconds: number): string {
-  return `${(milliseconds / 1000).toFixed(1)}s`;
-}
-
-function formatOutputDiagnostics(details: unknown, theme: RenderTheme): string {
-  const record = toRecord(details) as OutputSummaryDetails;
-  const toolExecutionMs = getFiniteNumber(record.toolExecutionMs);
-  const summaryDurationMs = getFiniteNumber(record.summaryDurationMs);
-  const originalOutputChars = getFiniteNumber(record.originalOutputChars);
-  const summaryTriggerMinChars = getFiniteNumber(record.summaryTriggerMinChars);
-  const summaryChars = getFiniteNumber(record.summaryChars);
-  const compressionRatio = getFiniteNumber(record.compressionRatio);
-  const compressionSavedPercent = getFiniteNumber(record.compressionSavedPercent);
-  const missedCompressionRatio = getFiniteNumber(record.missedCompressionRatio);
-  const fullOutputPath = getStringField(details, "fullOutputPath");
-
-  const statusLabels: Record<string, string> = {
-    summarized: "已压缩",
-    disabled: "原文·未启用",
-    "not-requested": "原文",
-    "full-output": "原文·RAW",
-    "below-threshold": "原文·低于阈值",
-    "diagnostic-failed": "原文·无法读取",
-    "summary-failed": "原文·总结失败",
-  };
-  const statusLabel = typeof record.outputSummaryStatus === "string"
-    ? statusLabels[record.outputSummaryStatus] ?? record.outputSummaryStatus
-    : undefined;
-  const parts: string[] = [];
-
-  if (statusLabel) parts.push(statusLabel);
-  if (originalOutputChars !== undefined && summaryChars !== undefined) {
-    parts.push(`字符 ${Math.round(originalOutputChars)}→${Math.round(summaryChars)}`);
-    if (compressionRatio !== undefined) parts.push(`${compressionRatio.toFixed(2)}x`);
-    if (compressionSavedPercent !== undefined) parts.push(`省 ${compressionSavedPercent.toFixed(1)}%`);
-  } else if (originalOutputChars !== undefined) {
-    parts.push(`字符 ${Math.round(originalOutputChars)}`);
-  }
-  if (summaryTriggerMinChars !== undefined) {
-    parts.push(`阈值≥${Math.round(summaryTriggerMinChars)}`);
-  }
-  if (
-    (record.outputSummaryStatus === "not-requested" || record.outputSummaryStatus === "full-output") &&
-    missedCompressionRatio !== undefined
-  ) {
-    parts.push(`长输出≥${missedCompressionRatio.toFixed(1)}x`);
-  }
-  if (toolExecutionMs !== undefined) {
-    parts.push(`工具 ${formatDurationSeconds(toolExecutionMs)}`);
-  }
-  if (summaryDurationMs !== undefined) {
-    parts.push(`压缩 ${formatDurationSeconds(summaryDurationMs)}`);
-  }
-  if (fullOutputPath) {
-    parts.push(`完整输出：${fullOutputPath}`);
-  }
-
-  const anomalies = Array.isArray(record.outputSummaryAnomalies)
-    ? record.outputSummaryAnomalies.filter((value): value is string => typeof value === "string")
-    : [];
-  const hasAnomaly = anomalies.length > 0;
-  const auditLine = parts.length > 0
-    ? `\n${theme.fg(hasAnomaly ? "error" : "muted", `🔍 输出审计 · ${parts.join(" · ")}`)}`
-    : "";
-
-  let warning = "";
-  if (record.outputSummaryAdvice) {
-    warning += `\n${theme.fg(
-      hasAnomaly ? "error" : "warning",
-      `${hasAnomaly ? "⛔ 输出处理异常" : "⚠ 输出处理提醒"}：${record.outputSummaryAdvice}`,
-    )}`;
-  }
-  if (record.outputSummaryError) {
-    warning += `\n${theme.fg(
-      "warning",
-      `↳ 原始错误：${sanitizeAnsiForThemedOutput(record.outputSummaryError)}`,
-    )}`;
-  }
-
-  return `${auditLine}${warning}`;
-}
-
-function formatOutputSummaryBody(summaryText: string, theme: RenderTheme): string {
-  const lines = compactOutputLines(
-    splitLines(sanitizeAnsiForThemedOutput(summaryText)),
-    { expanded: false, maxCollapsedConsecutiveEmptyLines: 0 },
-  );
-
-  return lines
-    .map((line) => {
-      const normalized = line
-        .replace(/^(\s*)#{1,6}\s+/, "$1")
-        .replace(/^(\s*)[-*]\s+/, "$1• ");
-      return normalized
-        .replace(/\*\*([^*\n]+)\*\*/g, (_match, value: string) => theme.bold(value))
-        .replace(/`([^`\n]+)`/g, (_match, value: string) => theme.fg("accent", value));
-    })
-    .join("\n");
-}
-
-function appendOutputSummary(
-  base: string,
-  details: unknown,
-  theme: RenderTheme,
-): string {
-  const summaryText = getStringField(details, "summaryText")?.trim();
-  const diagnostics = formatOutputDiagnostics(details, theme);
-  if (!summaryText) {
-    return `${base}${diagnostics}`;
-  }
-
-  return `${base}${diagnostics}\n${theme.fg("accent", theme.bold("📄 输出摘要"))}\n${formatOutputSummaryBody(summaryText, theme)}`;
+  return summary;
 }
 
 function formatBashSummary(
   lines: string[],
-  details: BashToolDetails | undefined,
+  _details: BashToolDetails | undefined,
   theme: RenderTheme,
   _showTruncationHints: boolean,
 ): string {
@@ -1092,7 +986,7 @@ function formatBashSummary(
     "muted",
     `↳ ${lineCount} ${pluralize(lineCount, "line")} returned`,
   );
-  return appendOutputSummary(summary, details, theme);
+  return summary;
 }
 
 function formatBashTruncationHints(
@@ -1155,7 +1049,6 @@ function renderBashPreviewWithHints(
   if (config.showTruncationHints) {
     preview += formatBashTruncationHints(details, theme);
   }
-  preview += formatOutputDiagnostics(details, theme);
   if (options.expanded) {
     preview += formatExpandedPreviewCapHint(lines, config, theme);
   }
@@ -1216,7 +1109,6 @@ function renderBashErrorResult(
   if (config.showTruncationHints) {
     text += formatBashTruncationHints(details, theme);
   }
-  text += formatOutputDiagnostics(details, theme);
   if (options.expanded && lines.length > 0) {
     text += formatExpandedPreviewCapHint(lines, config, theme);
   }
@@ -1240,7 +1132,7 @@ function renderSearchResult(
   const lines = prepareOutputLines(extractTextOutput(result), options);
 
   if (config.searchOutputMode === "hidden") {
-    return textResult(formatOutputDiagnostics(result.details, theme).trimStart());
+    return textResult("");
   }
 
   const hintCtx: PreviewHintContext = { lines, config, theme, options, details };
@@ -1414,22 +1306,6 @@ function getSearchScope(args: Record<string, unknown>): string {
   return shortenPath((args.path as string) || ".");
 }
 
-function getOutputPromptArg(args: unknown): string | undefined {
-  const prompt = getStringField(args, "outputPrompt")?.trim();
-  return prompt || undefined;
-}
-
-function appendOutputPrompt(
-  line: string,
-  args: unknown,
-  theme: RenderTheme,
-): string {
-  const prompt = getOutputPromptArg(args);
-  return prompt
-    ? `${line}\n${theme.fg("accent", `📝 输出要求： ${prompt}`)}`
-    : line;
-}
-
 function formatSearchCallLine(
   toolName: string,
   accent: string,
@@ -1495,7 +1371,7 @@ function renderReadDisplayCall(
     suffix = to ? `:${from}-${to}` : `:${from}`;
   }
   const line = `${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", path || "...")}${theme.fg("warning", suffix)}`;
-  return textResult(appendOutputPrompt(line, args, theme));
+  return textResult(line);
 }
 
 function renderReadDisplayResult(
@@ -1509,7 +1385,7 @@ function renderReadDisplayResult(
   }
 
   if (config.readOutputMode === "hidden") {
-    return textResult(formatOutputDiagnostics(result.details, theme).trimStart());
+    return textResult("");
   }
 
   const details = result.details as ReadToolDetails | undefined;
@@ -1568,69 +1444,6 @@ function renderEditDisplayCall(
   return buildPendingDiffCallComponent(summaryText, previewData, context, getConfig(), theme);
 }
 
-interface FileEditReviewResultDetails {
-  name?: string;
-  rulesFile?: string;
-  status?: string;
-  summary?: string;
-  durationMs?: number;
-  error?: string;
-}
-
-interface FileEditReviewAuditDetails {
-  status?: string;
-  filePath?: string;
-  toolName?: string;
-  durationMs?: number;
-  warnings?: string[];
-  reviewers?: FileEditReviewResultDetails[];
-}
-
-function appendFileEditReviewAudit(
-  component: Component,
-  details: unknown,
-  theme: RenderTheme,
-): Component {
-  const audit = toRecord(toRecord(details).fileEditReview) as FileEditReviewAuditDetails;
-  const reviewers = Array.isArray(audit.reviewers)
-    ? audit.reviewers.filter((reviewer): reviewer is FileEditReviewResultDetails => Boolean(reviewer) && typeof reviewer === "object")
-    : [];
-  const warnings = Array.isArray(audit.warnings)
-    ? audit.warnings.filter((warning): warning is string => typeof warning === "string")
-    : [];
-  if (!audit.status && reviewers.length === 0 && warnings.length === 0) return component;
-
-  const statusLabels: Record<string, string> = {
-    passed: "已通过",
-    rejected: "未通过",
-    failed: "审查失败·已放行",
-    skipped: "已跳过",
-    disabled: "未启用",
-  };
-  const status = typeof audit.status === "string" ? statusLabels[audit.status] ?? audit.status : "未知";
-  const reviewerLines = reviewers.map((reviewer) => {
-    const reviewerStatus = reviewer.status === "passed"
-      ? "✓ 通过"
-      : reviewer.status === "rejected"
-        ? "✗ 不通过"
-        : reviewer.status === "failed"
-          ? "! 失败·已放行"
-          : "- 跳过";
-    const duration = typeof reviewer.durationMs === "number" ? ` ${(reviewer.durationMs / 1000).toFixed(1)}s` : "";
-    const result = reviewer.summary ?? reviewer.error ?? "";
-    return `  ${reviewer.name ?? "reviewer"} · ${reviewerStatus}${duration}${result ? ` · ${result}` : ""}`;
-  });
-  const lines = [
-    `✦ 编辑审查 · ${status} · ${reviewers.length} 个审查 prompt · 工具 ${(typeof audit.durationMs === "number" ? audit.durationMs / 1000 : 0).toFixed(1)}s`,
-    ...reviewerLines,
-    ...warnings.map((warning) => `⚠ 规则提醒：${warning}`),
-  ];
-  const container = new Container();
-  container.addChild(component);
-  container.addChild(new Text(theme.fg(audit.status === "rejected" ? "error" : "muted", lines.join("\n")), 0, 0));
-  return container;
-}
-
 function renderEditDisplayResult(
   result: ToolRenderInput & { isError?: boolean },
   options: ToolRenderResultOptions,
@@ -1647,17 +1460,13 @@ function renderEditDisplayResult(
 
   const config = getConfig();
   const details = result.details as EditToolDetails | undefined;
-  return appendFileEditReviewAudit(
-    renderEditDiffResult(
+  return renderEditDiffResult(
       details,
       { expanded: options.expanded, filePath: getAdapterPath(context?.args, adapter) },
       config,
       theme,
       fallbackText,
-    ),
-    result.details,
-    theme,
-  );
+    );
 }
 
 function handleEditOrWriteResult(
@@ -1711,9 +1520,24 @@ function drainPendingToolDisplayDecorations(api: ToolDisplayApi): void {
   }
 }
 
+function drainPendingResultRenderMiddlewares(api: ToolDisplayApi): void {
+  const globalWithApi = globalThis as GlobalWithToolDisplayApi;
+  const pending = globalWithApi[TOOL_DISPLAY_PENDING_RESULT_MIDDLEWARES_KEY];
+  if (!Array.isArray(pending) || pending.length === 0) return;
+
+  const entries = pending.splice(0);
+  for (const entry of entries) {
+    if (!entry?.id || !entry.toolName || typeof entry.middleware !== "function") continue;
+    api.registerResultRenderMiddleware(entry);
+  }
+}
+
 function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
   const adapters = new Map<string, ToolDisplayAdapter>();
+  const resultRenderMiddlewares = new Map<string, PendingResultRenderMiddleware>();
+  const activeResultRenderPipelines = new Set<string>();
   let nextAdapterId = 0;
+  let nextResultMiddlewareId = 0;
 
   const resolveAdapter = (tool: RuntimeToolDefinition, adapter?: ToolDisplayAdapter): ToolDisplayAdapter => {
     if (adapter) {
@@ -1783,10 +1607,52 @@ function installToolDisplayApi(getConfig: ConfigGetter): ToolDisplayApi {
       }
       return removed;
     },
+    registerResultRenderMiddleware(registration: ToolResultRenderMiddlewareRegistration): string {
+      const id = registration.id || `result-middleware-${++nextResultMiddlewareId}`;
+      resultRenderMiddlewares.set(id, { ...registration, id });
+      return id;
+    },
+    unregisterResultRenderMiddleware(id: string): boolean {
+      return resultRenderMiddlewares.delete(id);
+    },
+    hasResultRenderMiddleware(id: string): boolean {
+      return resultRenderMiddlewares.has(id);
+    },
+    activateResultRenderPipeline(toolName: string): void {
+      activeResultRenderPipelines.add(toolName);
+    },
+    isResultRenderPipelineActive(toolName: string): boolean {
+      return activeResultRenderPipelines.has(toolName);
+    },
+    renderResultWithMiddleware(
+      context: ToolResultRenderMiddlewareContext,
+      renderBase: () => unknown,
+    ): unknown {
+      const middlewares = [...resultRenderMiddlewares.values()]
+        .filter((registration) => registration.toolName === context.toolName || registration.toolName === "*");
+      const dispatch = (index: number): unknown => {
+        const registration = middlewares[index];
+        if (!registration) return renderBase();
+        let nextCalled = false;
+        const next = (): unknown => {
+          nextCalled = true;
+          return dispatch(index + 1);
+        };
+        try {
+          const rendered = registration.middleware(context, next);
+          return rendered === undefined && !nextCalled ? dispatch(index + 1) : rendered;
+        } catch (error) {
+          logToolDisplayDebug(`Result render middleware '${registration.id}' failed.`, error);
+          return nextCalled ? renderBase() : dispatch(index + 1);
+        }
+      };
+      return dispatch(0);
+    },
   };
 
   (globalThis as GlobalWithToolDisplayApi)[TOOL_DISPLAY_API_KEY] = api;
   drainPendingToolDisplayDecorations(api);
+  drainPendingResultRenderMiddlewares(api);
   return api;
 }
 
@@ -1853,6 +1719,7 @@ export function registerToolDisplayOverrides(
 
     register();
     registeredBuiltInToolOverrides.add(toolName);
+    toolDisplayApi.activateResultRenderPipeline(toolName);
   };
 
   const executeBuiltin = (
@@ -1894,6 +1761,18 @@ export function registerToolDisplayOverrides(
     return renderSearchResult(result as never, options, config, theme, unitLabel, result.details, pluralLabel);
   };
 
+  const renderResultWithMiddleware = (
+    toolName: string,
+    result: unknown,
+    options: ToolRenderResultOptions,
+    theme: RenderTheme,
+    renderContext: ToolRenderContextLike | undefined,
+    renderBase: () => unknown,
+  ): unknown => toolDisplayApi.renderResultWithMiddleware(
+    { toolName, result, options, theme, renderContext },
+    renderBase,
+  );
+
   const buildSearchCallSuffix = (args: Record<string, unknown>): { scope: string; limitSuffix: string } => {
     return { scope: getSearchScope(args), limitSuffix: args.limit !== undefined ? ` (limit ${args.limit})` : "" };
   };
@@ -1907,7 +1786,8 @@ export function registerToolDisplayOverrides(
         return renderReadDisplayCall(args, theme);
       },
       renderResult(result, options, theme) {
-        return renderReadDisplayResult(result, options, getConfig(), theme);
+        return renderResultWithMiddleware("read", result, options, theme, undefined, () =>
+          renderReadDisplayResult(result, options, getConfig(), theme));
       },
     });
   });
@@ -1922,14 +1802,13 @@ export function registerToolDisplayOverrides(
       const globSuffix = args.glob ? ` (${args.glob})` : "";
       const limitSuffix =
         args.limit !== undefined ? ` limit ${args.limit}` : "";
-      return textResult(appendOutputPrompt(
+      return textResult(
         formatSearchCallLine("grep", `/${args.pattern}/`, ` in ${scope}${globSuffix}${limitSuffix}`, theme),
-        args,
-        theme,
-      ));
+      );
     },
     renderResult(result, options, theme) {
-      return renderSearchToolResult(result, options, theme, "match", "matches");
+      return renderResultWithMiddleware("grep", result, options, theme, undefined, () =>
+        renderSearchToolResult(result, options, theme, "match", "matches"));
     },
     });
   });
@@ -1941,14 +1820,13 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("find"),
     renderCall(args, theme) {
       const { scope, limitSuffix } = buildSearchCallSuffix(args);
-      return textResult(appendOutputPrompt(
+      return textResult(
         formatSearchCallLine("find", args.pattern as string, ` in ${scope}${limitSuffix}`, theme),
-        args,
-        theme,
-      ));
+      );
     },
     renderResult(result, options, theme) {
-      return renderSearchToolResult(result, options, theme, "result");
+      return renderResultWithMiddleware("find", result, options, theme, undefined, () =>
+        renderSearchToolResult(result, options, theme, "result"));
     },
     });
   });
@@ -1960,14 +1838,11 @@ export function registerToolDisplayOverrides(
     ...createBuiltinToolBase("ls"),
     renderCall(args, theme) {
       const { scope, limitSuffix } = buildSearchCallSuffix(args);
-      return textResult(appendOutputPrompt(
-        formatSearchCallLine("ls", scope, limitSuffix, theme),
-        args,
-        theme,
-      ));
+      return textResult(formatSearchCallLine("ls", scope, limitSuffix, theme));
     },
     renderResult(result, options, theme) {
-      return renderSearchToolResult(result, options, theme, "entry", "entries");
+      return renderResultWithMiddleware("ls", result, options, theme, undefined, () =>
+        renderSearchToolResult(result, options, theme, "entry", "entries"));
     },
     });
   });
@@ -1988,7 +1863,8 @@ export function registerToolDisplayOverrides(
       return renderEditDisplayCall(args, theme, context, {}, getConfig);
     },
     renderResult(result, options, theme, context) {
-      return renderEditDisplayResult(result as never, options, theme, context, {}, getConfig);
+      return renderResultWithMiddleware("edit", result, options, theme, context, () =>
+        renderEditDisplayResult(result as never, options, theme, context, {}, getConfig));
     },
     });
   });
@@ -2036,6 +1912,7 @@ export function registerToolDisplayOverrides(
       return buildPendingDiffCallComponent(summaryText, previewData, context, getConfig(), theme);
     },
     renderResult(result, options, theme, context) {
+      return renderResultWithMiddleware("write", result, options, theme, context, () => {
       const content = getToolContentArg(context?.args);
       const lineCount = countWriteContentLines(content);
       const { fallbackText, earlyResult } = handleEditOrWriteResult(result, options, context, theme, lineCount, "writing", "Write failed.");
@@ -2048,8 +1925,7 @@ export function registerToolDisplayOverrides(
         context,
         writeExecutionMetaByToolCallId,
       );
-      return appendFileEditReviewAudit(
-        renderWriteDiffResult(
+      return renderWriteDiffResult(
           content,
           {
             expanded: options.expanded,
@@ -2060,10 +1936,8 @@ export function registerToolDisplayOverrides(
           config,
           theme,
           fallbackText,
-        ),
-        result.details,
-        theme,
-      );
+        );
+      });
     },
     });
   });
@@ -2077,6 +1951,7 @@ export function registerToolDisplayOverrides(
       return renderBashCall(args, theme, context as never);
     },
     renderResult(result, options, theme, context) {
+      return renderResultWithMiddleware("bash", result, options, theme, context, () => {
       const config = getConfig();
       const details = result.details as BashToolDetails | undefined;
       const rawOutput = extractTextOutput(result);
@@ -2096,7 +1971,6 @@ export function registerToolDisplayOverrides(
         if (config.showTruncationHints) {
           text += formatBashTruncationHints(details, theme);
         }
-        text += formatOutputDiagnostics(details, theme);
         return textResult(text);
       }
 
@@ -2131,7 +2005,6 @@ export function registerToolDisplayOverrides(
         if (config.showTruncationHints) {
           hidden += formatBashTruncationHints(details, theme);
         }
-        hidden += formatOutputDiagnostics(details, theme);
         return textResult(hidden);
       }
 
@@ -2142,8 +2015,8 @@ export function registerToolDisplayOverrides(
       if (config.showTruncationHints) {
         text += formatBashTruncationHints(details, theme);
       }
-      text += formatOutputDiagnostics(details, theme);
       return textResult(text);
+      });
     },
     });
   });

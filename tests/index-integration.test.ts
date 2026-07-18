@@ -4,8 +4,15 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import toolDisplayExtension, { toolDisplayReloadRequired } from "../src/index.ts";
+import initializeToolDisplayExtension, { toolDisplayReloadRequired } from "../src/index.ts";
 import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../src/types.ts";
+
+function toolDisplayExtension(
+  pi: ExtensionAPI,
+  initial = { config: DEFAULT_TOOL_DISPLAY_CONFIG },
+): void {
+  initializeToolDisplayExtension(pi, initial);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers

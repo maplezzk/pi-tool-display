@@ -36,6 +36,7 @@ OpenCode-style tool rendering for the [Pi coding agent](https://github.com/mario
 - **Per-tool ownership toggles** so this extension can coexist with other renderer extensions
 - **Capability-aware settings** that keep MCP and RTK-specific controls aligned with the current environment
 - **Adapter API for renderer consumers** through the `pi-tool-display/tool-display-api-consumer` subpath export
+- **Composable result-render middleware** so optional extensions can append or replace built-in tool result components without adding extension-specific logic to `pi-tool-display`
 
 ## Installation
 
@@ -106,6 +107,22 @@ import { decorateToolForDisplay, decorateMcpToolForDisplay } from "pi-tool-displ
 ```
 
 `decorateToolForDisplay(tool, adapter)` applies the runtime decoration immediately when `pi-tool-display` is loaded, or queues the decoration until the API becomes available. Use adapter options such as `kind: "read" | "edit" | "mcp" | "generic"` to select the renderer family; `decorateMcpToolForDisplay(tool)` is the shortcut for MCP-style tools.
+
+Extensions that augment results for tools owned by `pi-tool-display` can register synchronous render middleware:
+
+```ts
+import { Container, Text, type Component } from "@earendil-works/pi-tui";
+import { registerToolResultRenderMiddleware } from "pi-tool-display/tool-display-api-consumer";
+
+registerToolResultRenderMiddleware("bash", (context, next) => {
+  const container = new Container();
+  container.addChild(next() as Component);
+  container.addChild(new Text(context.theme.fg("accent", "extension result"), 0, 0));
+  return container;
+}, { id: "my-extension.result-renderer.v1" });
+```
+
+Calling `next()` preserves the current renderer and later middleware; returning a component without calling `next()` replaces the remaining result rendering. Registrations made before `pi-tool-display` loads are queued by stable ID and drained during initialization.
 
 ## Presets
 

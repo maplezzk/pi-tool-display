@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Removed the fork-specific execution middleware API and `outputPrompt` schema injection. Output distillation and file-edit review now use Pi's native tool events, leaving this package responsible for rendering only.
+- Added a generic, load-order-independent result-render middleware API for extensions that need to append or replace built-in tool result components; `pi-tool-display` no longer interprets distillation or review-specific result fields.
 
 ### Fixed
 - Canonicalized temporary and symlinked workspace paths before pending diff preview boundary checks, avoiding false “outside workspace” errors on macOS while preserving realpath escape protection.

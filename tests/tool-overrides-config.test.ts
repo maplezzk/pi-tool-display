@@ -150,7 +150,7 @@ function renderToolCall(
 	};
 }
 
-test("hidden read/search output still renders output audit diagnostics", async () => {
+test("hidden read/search output stays hidden for unknown extension details", async () => {
 	const config = buildConfig({
 		readOutputMode: "hidden",
 		searchOutputMode: "hidden",
@@ -159,24 +159,13 @@ test("hidden read/search output still renders output audit diagnostics", async (
 	registerToolDisplayOverrides(api, () => config);
 	await runLifecycle(eventHandlers);
 
-	const details = {
-		toolExecutionMs: 120,
-		originalOutputChars: 2400,
-		summaryTriggerMinChars: 200,
-		missedCompressionRatio: 2,
-		outputSummaryStatus: "not-requested",
-		fullOutputPath: "/tmp/pi-distill/summary-example.txt",
-	};
+	const details = { externalExtensionData: { status: "complete" } };
 	for (const toolName of ["read", "grep", "find"]) {
 		const rendered = renderToolResult(registeredTools.find((tool) => tool.name === toolName), {
 			text: "hidden output",
 			details,
 		});
-		assert.match(rendered, /🔍 输出审计/);
-		assert.match(rendered, /原文/);
-		assert.match(rendered, /字符 2400/);
-		assert.match(rendered, /工具 0\.1s/);
-		assert.match(rendered, /完整输出：\/tmp\/pi-distill\/summary-example\.txt/);
+		assert.equal(rendered, "");
 	}
 });
 
