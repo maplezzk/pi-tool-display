@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { registerToolDisplayCommand } from "../src/config-modal.ts";
+import {
+	applySetting,
+	buildInspectorSettings,
+	registerToolDisplayCommand,
+} from "../src/config-modal.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	type ToolDisplayConfig,
@@ -119,6 +123,7 @@ test("'show' argument notifies with config summary", async () => {
 
 	assert.equal(notifications.length, 1);
 	assert.match(notifications[0]?.message ?? "", /^tool-display: /);
+	assert.ok(notifications[0]?.message.includes("enabled=on"));
 	assert.ok(notifications[0]?.message.includes("preset=opencode"));
 	assert.ok(notifications[0]?.message.includes("mcp=hidden"), "MCP setting in summary with MCP capability");
 	assert.ok(
@@ -126,6 +131,30 @@ test("'show' argument notifies with config summary", async () => {
 		"RTK hints in summary with RTK capability",
 	);
 	assert.equal(notifications[0]?.level, "info");
+});
+
+test("global switch is exposed by the settings modal and updates enabled", () => {
+	const settings = buildInspectorSettings(
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		{ hasMcpTooling: false, hasRtkOptimizer: false },
+	);
+	const globalSwitch = settings.find((setting) => setting.id === "enabled");
+
+	assert.ok(globalSwitch);
+	assert.equal(globalSwitch.currentValue, "on");
+	assert.deepEqual(globalSwitch.values, ["on", "off"]);
+
+	const disabled = applySetting(DEFAULT_TOOL_DISPLAY_CONFIG, "enabled", "off");
+	assert.equal(disabled.enabled, false);
+});
+
+test("preset changes preserve the independent global switch", () => {
+	const disabledConfig = { ...DEFAULT_TOOL_DISPLAY_CONFIG, enabled: false };
+
+	const balanced = applySetting(disabledConfig, "preset", "balanced");
+
+	assert.equal(balanced.enabled, false);
+	assert.equal(balanced.readOutputMode, "summary");
 });
 
 test("'show' hides MCP and RTK sections when capabilities absent", async () => {
@@ -189,6 +218,20 @@ test("'preset balanced' sets correct config", async () => {
 	assert.equal(last.config!.mcpOutputMode, "summary");
 	assert.equal(last.config!.bashOutputMode, "summary");
 	assert.match(notifications[0]?.message ?? "", /set to balanced/i);
+});
+
+test("direct preset command preserves a disabled global switch", async () => {
+	const { api, getHandler } = createPiStub();
+	const { controller, getLastSet } = createControllerStub({ enabled: false });
+	const { ctx } = createCtxStub(true);
+
+	registerToolDisplayCommand(api, controller);
+	const handler = getHandler();
+	assert.ok(handler);
+
+	await handler("preset balanced", ctx);
+
+	assert.equal(getLastSet().config?.enabled, false);
 });
 
 test("'preset verbose' sets correct config", async () => {

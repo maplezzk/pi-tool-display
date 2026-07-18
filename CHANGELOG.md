@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added a global switch to `/tool-display`; disabling keeps the configuration command available and takes effect after `/reload`.
+
 ### Changed
 - Removed the fork-specific execution middleware API and `outputPrompt` schema injection. Output distillation and file-edit review now use Pi's native tool events, leaving this package responsible for rendering only.
 

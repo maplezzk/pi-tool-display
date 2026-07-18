@@ -41,6 +41,7 @@ function toolOwnershipSummary(config: ToolDisplayConfig): string {
 function summarizeConfig(config: ToolDisplayConfig, capabilities: ToolDisplayCapabilities): string {
 	const preset = detectToolDisplayPreset(config);
 	const parts = [
+		`enabled=${toOnOff(config.enabled)}`,
 		`preset=${preset}`,
 		`owners={${toolOwnershipSummary(config)}}`,
 		`userBox=${toOnOff(config.enableNativeUserMessageBox)}`,
@@ -89,12 +90,32 @@ function buildAdvancedNotes(
 	return notes;
 }
 
-function buildInspectorSettings(
+export function buildInspectorSettings(
 	config: ToolDisplayConfig,
 	capabilities: ToolDisplayCapabilities,
 ): InspectorSettingItem[] {
 	const configPath = shortenPath(getToolDisplayConfigPath());
 	const items: InspectorSettingItem[] = [
+		{
+			id: "enabled",
+			label: "Global switch",
+			currentValue: toOnOff(config.enabled),
+			values: ["on", "off"],
+			inspectorTitle: "Global Tool Display Switch",
+			inspectorSummary: [
+				"Enables or disables all pi-tool-display rendering and tool ownership behavior.",
+				"The /tool-display command remains available while disabled so the extension can be enabled again without editing Pi package settings.",
+			],
+			inspectorOptions: [
+				"on — enable tool overrides and enhanced rendering",
+				"off — keep the package installed but use Pi's default rendering",
+			],
+			inspectorAdvanced: buildAdvancedNotes(config, capabilities, [
+				"Changing this switch is saved immediately and takes effect after /reload.",
+			]),
+			inspectorPath: configPath,
+			searchTerms: ["global", "enabled", "disable", "switch", "reload"],
+		},
 		{
 			id: "preset",
 			label: "Preset profile",
@@ -314,16 +335,21 @@ function buildInspectorSettings(
 	return items;
 }
 
-function applyPreset(preset: ToolDisplayPreset): ToolDisplayConfig {
-	return getToolDisplayPresetConfig(preset);
+function applyPreset(preset: ToolDisplayPreset, enabled: boolean): ToolDisplayConfig {
+	return { ...getToolDisplayPresetConfig(preset), enabled };
 }
 
-function applySetting(config: ToolDisplayConfig, id: string, value: string): ToolDisplayConfig {
+export function applySetting(config: ToolDisplayConfig, id: string, value: string): ToolDisplayConfig {
 	switch (id) {
 		case "preset": {
 			const parsed = parseToolDisplayPreset(value);
-			return parsed ? applyPreset(parsed) : config;
+			return parsed ? applyPreset(parsed, config.enabled) : config;
 		}
+		case "enabled":
+			return {
+				...config,
+				enabled: value === "on",
+			};
 		case "enableNativeUserMessageBox":
 			return {
 				...config,
@@ -465,7 +491,7 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 	}
 
 	if (normalized === "reset") {
-		controller.setConfig(getToolDisplayPresetConfig("opencode"), ctx);
+		controller.setConfig(applyPreset("opencode", controller.getConfig().enabled), ctx);
 		ctx.ui.notify("Tool display preset reset to opencode.", "info");
 		return true;
 	}
@@ -478,7 +504,7 @@ export function handleToolDisplayArgs(args: string, ctx: ExtensionCommandContext
 			return true;
 		}
 
-		controller.setConfig(getToolDisplayPresetConfig(preset), ctx);
+		controller.setConfig(applyPreset(preset, controller.getConfig().enabled), ctx);
 		ctx.ui.notify(`Tool display preset set to ${preset}.`, "info");
 		return true;
 	}

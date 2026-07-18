@@ -18,6 +18,7 @@ import { registerThinkingLabeling } from "./thinking-label.js";
 import registerNativeUserMessageBox from "./user-message-box-native.js";
 import {
   BUILT_IN_TOOL_OVERRIDE_NAMES,
+  type ConfigLoadResult,
   type ToolDisplayConfig,
 } from "./types.js";
 
@@ -32,11 +33,17 @@ function ownershipChanged(
   );
 }
 
-export default function toolDisplayExtension(pi: ExtensionAPI): void {
-  const initial = loadToolDisplayConfig();
-  if (!initial.config.enabled) {
-    return;
-  }
+export function toolDisplayReloadRequired(
+  previous: ToolDisplayConfig,
+  next: ToolDisplayConfig,
+): boolean {
+  return previous.enabled !== next.enabled || ownershipChanged(previous, next);
+}
+
+export default function toolDisplayExtension(
+  pi: ExtensionAPI,
+  initial: ConfigLoadResult = loadToolDisplayConfig(),
+): void {
 
   resetDisposed();
 
@@ -67,7 +74,7 @@ export default function toolDisplayExtension(pi: ExtensionAPI): void {
     ctx: ExtensionCommandContext,
   ): void => {
     const normalized = normalizeToolDisplayConfig(next);
-    const requiresReload = ownershipChanged(config, normalized);
+    const requiresReload = toolDisplayReloadRequired(config, normalized);
     config = normalized;
 
     const saved = saveToolDisplayConfig(normalized);
@@ -77,15 +84,17 @@ export default function toolDisplayExtension(pi: ExtensionAPI): void {
 
     if (requiresReload) {
       ctx.ui.notify(
-        "Tool ownership updates apply after /reload.",
+        "Global switch or tool ownership updates apply after /reload.",
         "warning",
       );
     }
   };
 
-  registerToolDisplayOverrides(pi, getEffectiveConfig);
-  registerNativeUserMessageBox(pi, getConfig);
-  registerThinkingLabeling(pi);
+  if (initial.config.enabled) {
+    registerToolDisplayOverrides(pi, getEffectiveConfig);
+    registerNativeUserMessageBox(pi, getConfig);
+    registerThinkingLabeling(pi);
+  }
 
   pi.registerCommand("tool-display", {
     description: "Configure tool output rendering (OpenCode-style)",

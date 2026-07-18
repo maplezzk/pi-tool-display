@@ -1,4 +1,5 @@
 {
+  "enabled": true,
   "debug": false,
   "registerToolOverrides": {
     "read": true,

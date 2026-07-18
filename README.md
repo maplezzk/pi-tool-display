@@ -75,6 +75,7 @@ Open the settings modal:
 
 The modal exposes the day-to-day controls most people change regularly:
 
+- global extension switch (takes effect after `/reload`)
 - preset profile
 - read output mode
 - grep/find/ls output mode
@@ -141,6 +142,7 @@ A starter template is included at `config/config.example.json`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `enabled` | boolean | `true` | Global extension switch; `/tool-display` remains available while disabled and changes apply after `/reload` |
 | `debug` | boolean | `false` | Opt-in file logging for extension diagnostics; missing values are treated as `false` |
 | `registerToolOverrides` | object | all `true` | Built-in tool ownership flags |
 | `customToolOverrides` | object | `{}` | Explicit opt-in rendering rules for non-built-in extension tools |

@@ -4,7 +4,8 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import toolDisplayExtension from "../src/index.ts";
+import toolDisplayExtension, { toolDisplayReloadRequired } from "../src/index.ts";
+import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../src/types.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +93,38 @@ test("entry point registers tool-display command", () => {
 
   const cmdNames = capturedCommands.map((c) => c.name);
   assert.ok(cmdNames.includes("tool-display"), "tool-display command registered");
+});
+
+test("disabled entry point keeps the command but does not register render behavior", () => {
+  const { api, capturedCommands, capturedHandlers, capturedTools } = createApiStub();
+
+  toolDisplayExtension(api, {
+    config: { ...DEFAULT_TOOL_DISPLAY_CONFIG, enabled: false },
+  });
+
+  assert.ok(capturedCommands.some((command) => command.name === "tool-display"));
+  assert.equal(capturedTools.length, 0);
+  const eventNames = capturedHandlers.map((handler) => handler.event);
+  assert.ok(eventNames.includes("session_start"));
+  assert.ok(eventNames.includes("before_agent_start"));
+  assert.ok(eventNames.includes("session_shutdown"));
+  assert.equal(eventNames.includes("message_update"), false);
+  assert.equal(eventNames.includes("message_end"), false);
+  assert.equal(eventNames.includes("context"), false);
+});
+
+test("global switch changes require reload", () => {
+  assert.equal(
+    toolDisplayReloadRequired(
+      DEFAULT_TOOL_DISPLAY_CONFIG,
+      { ...DEFAULT_TOOL_DISPLAY_CONFIG, enabled: false },
+    ),
+    true,
+  );
+  assert.equal(
+    toolDisplayReloadRequired(DEFAULT_TOOL_DISPLAY_CONFIG, DEFAULT_TOOL_DISPLAY_CONFIG),
+    false,
+  );
 });
 
 test("entry point registers built-in tool overrides", () => {
