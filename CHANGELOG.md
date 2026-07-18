@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed the fork-specific execution middleware API and `outputPrompt` schema injection. Output distillation and file-edit review now use Pi's native tool events, leaving this package responsible for rendering only.
+
+### Fixed
+- Canonicalized temporary and symlinked workspace paths before pending diff preview boundary checks, avoiding false “outside workspace” errors on macOS while preserving realpath escape protection.
+- Isolated the config reload regression test from the real Pi user config and removed its stale dependency on a repository-root `config.json`.
+
 ## [0.5.0] - 2026-07-03
 
 ### Added

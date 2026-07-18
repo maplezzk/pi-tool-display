@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   UserMessageComponent,
@@ -896,38 +898,46 @@ test("11: each tool override call clones parameters independently", () => {
 // ---------------------------------------------------------------------------
 
 test("12: config-store reloads config on fingerprint change between calls", () => {
-  const configUrl = new URL("../config.json", import.meta.url);
-  const originalConfigJson = readFileSync(configUrl, "utf8");
+  const configDir = mkdtempSync(join(tmpdir(), "pi-tool-display-reload-config-"));
+  const configFile = join(configDir, "config.json");
 
   try {
-    const initialResult = loadToolDisplayConfig();
+    writeFileSync(configFile, JSON.stringify({ readOutputMode: "preview" }), "utf8");
+    const initialResult = loadToolDisplayConfig(configFile);
 
-    // Config is cached, but if we change the file, fingerprint changes.
-    // Since local extension config can intentionally differ from defaults,
-    // verify loading returns a valid config and save/reload preserves it.
     assert.ok(initialResult.config, "config loaded successfully");
-    assert.equal(typeof initialResult.config.readOutputMode, "string");
-    assert.equal(typeof initialResult.config.searchOutputMode, "string");
+    assert.equal(initialResult.config.readOutputMode, "preview");
+
+    // 外部修改文件后，mtime/size 指纹变化必须使缓存失效。
+    writeFileSync(configFile, JSON.stringify({
+      readOutputMode: "hidden",
+      searchOutputMode: "preview",
+      previewLines: 17,
+    }), "utf8");
+    const changedResult = loadToolDisplayConfig(configFile);
+    assert.equal(changedResult.config.readOutputMode, "hidden");
+    assert.equal(changedResult.config.searchOutputMode, "preview");
+    assert.equal(changedResult.config.previewLines, 17);
 
     // saveToolDisplayConfig clears the cache, forcing a re-read
-    const saveResult = saveToolDisplayConfig(initialResult.config);
+    const saveResult = saveToolDisplayConfig(changedResult.config, configFile);
     assert.ok(saveResult.success, "config saved successfully (cache cleared)");
 
     // After save, cache is cleared. Next load re-reads from disk.
-    const afterSaveResult = loadToolDisplayConfig();
+    const afterSaveResult = loadToolDisplayConfig(configFile);
     assert.ok(afterSaveResult.config, "config re-loaded after cache clear");
     assert.equal(
       afterSaveResult.config.readOutputMode,
-      initialResult.config.readOutputMode,
+      changedResult.config.readOutputMode,
       "re-loaded read output mode matches saved config",
     );
     assert.equal(
       afterSaveResult.config.searchOutputMode,
-      initialResult.config.searchOutputMode,
+      changedResult.config.searchOutputMode,
       "re-loaded search output mode matches saved config",
     );
   } finally {
-    writeFileSync(configUrl, originalConfigJson, "utf8");
+    rmSync(configDir, { recursive: true, force: true });
   }
 });
 

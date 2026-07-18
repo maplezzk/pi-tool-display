@@ -14,8 +14,6 @@ import {
 	type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import {
-	BASH_OUTPUT_PROMPT_DESCRIPTION,
-	OUTPUT_PROMPT_DESCRIPTION,
 	registerToolDisplayOverrides,
 } from "../src/tool-overrides.ts";
 import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../src/types.ts";
@@ -120,11 +118,7 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 		const registeredTool = byName.get(name);
 		const builtInMetadata = builtInTool as unknown as RegisteredToolLike;
 		assert.ok(registeredTool, `expected '${name}' to be registered`);
-		if (name === "bash") {
-			assert.equal(registeredTool.promptSnippet, "执行 bash 命令并处理输出");
-		} else {
-			assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
-		}
+		assert.equal(registeredTool.promptSnippet, builtInMetadata.promptSnippet);
 	}
 
 	assert.deepEqual(byName.get("read")?.promptGuidelines, (builtInTools.read as unknown as RegisteredToolLike).promptGuidelines);
@@ -133,11 +127,7 @@ test("registerToolDisplayOverrides copies built-in prompt metadata onto overridd
 	assert.equal(byName.get("grep")?.promptGuidelines, undefined);
 	assert.equal(byName.get("find")?.promptGuidelines, undefined);
 	assert.equal(byName.get("ls")?.promptGuidelines, undefined);
-	assert.deepEqual(byName.get("bash")?.promptGuidelines, [
-		"outputPrompt 是必传参数；需要完整原文时严格传入 RAW（大小写不敏感）。",
-		"不要填写‘完整输出原文’等自然语言；只有严格的 RAW 才表示不调用总结模型。",
-		"传入其他非空 outputPrompt 时调用总结模型，具体内容决定总结保留哪些信息。",
-	]);
+	assert.deepEqual(byName.get("bash")?.promptGuidelines, (builtInTools.bash as unknown as RegisteredToolLike).promptGuidelines);
 });
 
 test("registerToolDisplayOverrides registers built-in display renderers during extension load for pre-bind history rendering", () => {
@@ -180,49 +170,7 @@ test("registerToolDisplayOverrides clones built-in parameter schemas so Pi TUI k
 			builtInTool.parameters,
 			`expected '${name}' to use a cloned parameter object`,
 		);
-		if (name === "bash") {
-			const expectedBashParameters = {
-				...(builtInTool.parameters as unknown as Record<string, unknown>),
-				properties: {
-					...((builtInTool.parameters as unknown as Record<string, unknown>).properties as Record<string, unknown>),
-					outputPrompt: {
-						type: "string",
-						description: BASH_OUTPUT_PROMPT_DESCRIPTION,
-					},
-				},
-				required: [
-					...(Array.isArray((builtInTool.parameters as unknown as Record<string, unknown>).required)
-						? ((builtInTool.parameters as unknown as Record<string, unknown>).required as unknown[]).filter(
-							(value): value is string => typeof value === "string" && value !== "outputPrompt",
-						)
-						: []),
-					"outputPrompt",
-				],
-			};
-			assert.deepEqual(registeredTool.parameters, expectedBashParameters);
-		} else if (["read", "grep", "find"].includes(name)) {
-			const builtInParameters = builtInTool.parameters as unknown as Record<string, unknown>;
-			assert.deepEqual(registeredTool.parameters, {
-				...builtInParameters,
-				properties: {
-					...(builtInParameters.properties as Record<string, unknown>),
-					outputPrompt: {
-						type: "string",
-						description: OUTPUT_PROMPT_DESCRIPTION,
-					},
-				},
-				required: [
-					...(Array.isArray(builtInParameters.required)
-						? (builtInParameters.required as unknown[]).filter(
-							(value): value is string => typeof value === "string" && value !== "outputPrompt",
-						)
-						: []),
-					"outputPrompt",
-				],
-			});
-		} else {
-			assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
-		}
+		assert.deepEqual(registeredTool.parameters, builtInTool.parameters);
 	}
 });
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -33,6 +33,28 @@ test("pending write preview compares existing safe workspace files", () => {
   });
 });
 
+test("pending preview accepts a workspace reached through a symlink alias", () => {
+  withTempWorkspace("pi-tool-display-real-workspace-", (workspace) => {
+    const aliasRoot = mkdtempSync(join(tmpdir(), "pi-tool-display-workspace-alias-"));
+    try {
+      const workspaceAlias = join(aliasRoot, "workspace");
+      symlinkSync(workspace, workspaceAlias, "dir");
+      writeFileSync(join(workspace, "sample.txt"), "before\n", "utf8");
+
+      const preview = buildPendingWritePreviewData(
+        { path: "sample.txt", content: "after\n" },
+        workspaceAlias,
+      );
+
+      assert.equal(preview?.fileExistedBeforeWrite, true);
+      assert.equal(preview?.previousContent, "before\n");
+      assert.equal(preview?.notice, undefined);
+    } finally {
+      rmSync(aliasRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 test("pending preview skips direct reads outside the workspace", () => {
   withTempWorkspace("pi-tool-display-boundary-", (workspace) => {
     const outside = mkdtempSync(join(tmpdir(), "pi-tool-display-outside-"));
@@ -55,6 +77,28 @@ test("pending preview skips direct reads outside the workspace", () => {
       assert.equal(writePreview?.previousContent, undefined);
       assert.equal(writePreview?.nextContent, "replacement\n");
       assert.match(writePreview?.notice ?? "", /outside the current workspace/);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test("pending preview rejects workspace symlinks that resolve outside", () => {
+  withTempWorkspace("pi-tool-display-symlink-boundary-", (workspace) => {
+    const outside = mkdtempSync(join(tmpdir(), "pi-tool-display-symlink-outside-"));
+    try {
+      const outsideFile = join(outside, "secret.txt");
+      writeFileSync(outsideFile, "secret\n", "utf8");
+      symlinkSync(outsideFile, join(workspace, "linked-secret.txt"), "file");
+
+      const preview = buildPendingEditPreviewData(
+        { path: "linked-secret.txt", oldText: "secret", newText: "safe" },
+        workspace,
+      );
+
+      assert.equal(preview?.previousContent, undefined);
+      assert.equal(preview?.nextContent, undefined);
+      assert.match(preview?.notice ?? "", /resolves outside the current workspace/);
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }

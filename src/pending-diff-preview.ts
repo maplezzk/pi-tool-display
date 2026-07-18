@@ -81,16 +81,17 @@ function safeRealpath(path: string): string {
 
 function resolveWorkspaceReadPath(cwd: string, rawPath: string): { resolvedPath: string; error?: string } {
   const workspacePath = safeRealpath(cwd);
-  const resolvedPath = resolvePreviewPath(cwd, rawPath);
-
-  if (!isWithinWorkspace(workspacePath, resolvedPath)) {
-    return {
-      resolvedPath,
-      error: "Preview unavailable because the target path is outside the current workspace.",
-    };
-  }
+  // 相对路径必须基于规范化后的 workspace 解析。macOS 上 /var 通常会被
+  // realpath 展开为 /private/var，混用两种表示会把 workspace 内文件误判为越界。
+  const resolvedPath = resolvePreviewPath(workspacePath, rawPath);
 
   if (!existsSync(resolvedPath)) {
+    if (!isWithinWorkspace(workspacePath, resolvedPath)) {
+      return {
+        resolvedPath,
+        error: "Preview unavailable because the target path is outside the current workspace.",
+      };
+    }
     return { resolvedPath };
   }
 

@@ -1,13 +1,11 @@
 const TOOL_DISPLAY_API_KEY = Symbol.for("pi-tool-display.api.v1");
 const TOOL_DISPLAY_PENDING_DECORATIONS_KEY = Symbol.for("pi-tool-display.pendingDecorations.v1");
-const TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY = Symbol.for("pi-tool-display.pendingExecutionMiddlewares.v1");
 
 export function getToolDisplayApi() {
   const api = globalThis[TOOL_DISPLAY_API_KEY];
   if (
     api?.version !== 1 ||
-    typeof api.decorateTool !== "function" ||
-    typeof api.registerExecutionMiddleware !== "function"
+    typeof api.decorateTool !== "function"
   ) {
     return undefined;
   }
@@ -42,17 +40,4 @@ export function decorateToolForDisplay(tool, adapter, options = {}) {
 
 export function decorateMcpToolForDisplay(tool) {
   return decorateToolForDisplay(tool, { kind: "mcp", overrideExistingRenderers: true });
-}
-
-export function registerToolExecutionMiddleware(toolName, middleware) {
-  const api = getToolDisplayApi();
-  if (api) {
-    return api.registerExecutionMiddleware(toolName, middleware);
-  }
-
-  const existing = globalThis[TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY];
-  const queue = Array.isArray(existing) ? existing : [];
-  queue.push({ toolName, middleware });
-  globalThis[TOOL_DISPLAY_PENDING_EXECUTION_MIDDLEWARES_KEY] = queue;
-  return undefined;
 }
